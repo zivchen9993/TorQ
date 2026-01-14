@@ -1,0 +1,59 @@
+<<<<<<< HEAD
+# Default ignored files
+/shelf/
+/workspace.xml
+# Editor-based HTTP Client requests
+/httpRequests/
+# Datasource local storage ignored files
+/dataSources/
+/dataSources.local.xml
+
+# Ignore saved runs
+runs/
+old/
+classical_comparisson/
+../QPINNsManualTensors/
+
+# Ignore python project files
+.venv/
+.idea/
+.git/
+
+=======
+
+# Ignore other stuff
+runs_with_seeds/
+figures_for_paper/runs_for_average/
+runs_without_energy_loss_only_pulse/
+runs_from_Huang/
+runs_from_Jensen/
+runs_from_A100/
+runs_bp/
+figures_for_paper/
+older runs/
+git_token.txt
+Ez_pade*
+some_name_other.py
+lid_driven_cavity.ipynb
+
+ansatzes/
+ansatzes_and_other_figs/
+bar_charts/
+runs.*
+gpu_check.sh
+AnsatzDrawer.py
+AnsatzesQiskit.py
+for_paper/
+
+qpinn_oop_tests/
+trend comparisson.xlsx
+editing_images/
+seed*
+done/
+constants/classical_runs/
+run_all_quantum_1d_4_gpus.txt
+*.yml
+*.yaml
+TorQ/__pycache__/
+
+>>>>>>> 43634be (Save local changes before merging)

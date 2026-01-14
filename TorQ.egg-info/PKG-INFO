@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: TorQ
+Version: 0.1.0
+Summary: Tensor Operations for Research in Quantum systems.
+License: TBD
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: torch>=1.13

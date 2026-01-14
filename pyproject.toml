@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "TorQ"
+version = "0.1.0"
+description = "Tensor Operations for Research in Quantum systems."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["torch>=1.13"]
+license = "MIT"
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+  "mypy"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
