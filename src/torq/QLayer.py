@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import torq as tq
-from utility import PennyLaneSanityCheck as qml
 from .Ansatz import make_ansatz
+from ._pennylane_backend import maybe_create_pennylane_backend
 
 
 class QLayer(nn.Module):
@@ -30,11 +30,13 @@ class QLayer(nn.Module):
 
         # sigma_Z observable like you had
         self.observable = tq.sigma_Z_like(x=self.params)  # keeps dtype/device consistent via likeable
+        self._optional_backend = maybe_create_pennylane_backend(self)
 
     def forward(self, x):
-        ####### Debug ########
         if not torch.isfinite(self.params).all():
             raise ValueError(f"QLayer.params has NaN: {self.params}")
+        if self._optional_backend is not None:
+            return self._optional_backend.forward(x)
         if not self.data_reupload_every:
             state = tq.angle_embedding(
                 x,
@@ -145,4 +147,3 @@ class QLayer(nn.Module):
             self.params = nn.Parameter(parameters)
             if self.data_reupload_every:
                 self.params_last_layer_reupload = nn.Parameter(parameters_reupload)
-

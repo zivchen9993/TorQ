@@ -11,7 +11,7 @@ def get_initial_state(n_qubits, batch_size=1, *, dtype, device):
     return state
 
 
-def get_angle_embedding_sigmas(angles, angle_scaling_method='none', angle_scaling=torch.pi, basis='X'):  # angle scaling methods: None, 'scale' (without bias), 'scale_with_bias', 'asin', 'acos'
+def get_angle_embedding_sigmas(angles, angle_scaling_method='none', angle_scaling=torch.pi, basis='X'):  # angle scaling methods: none, 'scale' (without bias), 'scale_with_bias', 'asin', 'acos'
     """
     Important note: when using asin or acos, it clamps the angles so they won't get to -1 or 1 and blow up the derivatives
     """

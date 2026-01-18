@@ -1,4 +1,4 @@
-# QPINNACLE Quantum Library
+# TorQ Quantum Library
 
 Lightweight, Torch-based statevector utilities built for fast quantum layers inside neural networks.
 
@@ -24,6 +24,20 @@ This library was optimized and benchmarked primarily on single NVIDIA L40s and A
 Performance on other GPUs has not been tuned and may differ. Multi-GPU usage is not
 currently available.
 
+## Current supported features
+- Quantum circuit construction with common ansatzes:
+    - Strongly entangling (2 versions)
+    - Cross mesh (3 versions)
+    - No entanglement
+- Angle embedding:
+    - 'none'
+    - 'scale' (without bias)
+    - 'scale_with_bias' 
+    - 'asin'
+    - 'acos'
+- Data reuploading (significant cost addition for the simulation running time and memory)
+
+
 ## Limitations
 
 - Statevector simulation only (memory scales as O(2^n)).
@@ -40,7 +54,7 @@ pip install -e .
 
 ```python
 import torch
-from TorQ.simple import Circuit, CircuitConfig
+from torq.simple import Circuit, CircuitConfig
 
 n_qubits = 4
 n_layers = 2
@@ -56,7 +70,7 @@ y = circuit(x)
 
 ```python
 import torch
-from TorQ.simple import Circuit, CircuitConfig
+from torq.simple import Circuit, CircuitConfig
 
 cfg = CircuitConfig(angle_scaling=torch.pi, scale_with_bias=False)
 circuit = Circuit(n_qubits=4, n_layers=2, ansatz_name="strongly_entangling", config=cfg)
@@ -98,7 +112,7 @@ y = circuit(x)
 ## Low-level functions
 
 ```python
-from TorQ.simple import (
+from torq.simple import (
     angle_embedding,
     data_reuploading_gates,
     data_reuploading,

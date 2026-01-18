@@ -37,6 +37,8 @@ class CircuitConfig:
     init_ones: bool = False
     init_pi_half: bool = False
     noise_all_q_layers: bool = False
+    pennylane_backend: bool = False
+    pennylane_dev_name: str | None = None
 
 
 class Circuit(nn.Module):
