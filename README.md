@@ -3,7 +3,6 @@
 Lightweight, Torch-based statevector utilities built for fast quantum layers inside neural networks.
 
 Developed while writing the paper:
-
 Quantum Physics-Informed Neural Networks for Maxwell’s Equations: Circuit Design, “Black Hole” Barren Plateaus Mitigation, and GPU Acceleration
 
 by Ziv Chen, Gal G. Shaviner, Hemanth Chandravamsi, Shimon Pisnoy, Steven H. Frankel, Uzi Pereg
