@@ -36,7 +36,11 @@ currently available.
     - 'asin'
     - 'acos'
 - Data reuploading (significant cost addition for the simulation running time and memory)
+- Measurement of expectation values in Z-basis
+- Differentiable with PyTorch autograd
 
+- to benchmark performance against PennyLane, please use the TorQ-bench repository:
+https://github.com/zivchen9993/TorQ-bench
 
 ## Limitations
 
