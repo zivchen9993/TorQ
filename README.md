@@ -2,6 +2,11 @@
 
 Lightweight, Torch-based statevector utilities built for fast quantum layers inside neural networks.
 
+Developed while writing the paper:
+Quantum Physics-Informed Neural Networks for Maxwell’s Equations: Circuit Design, “Black Hole” Barren Plateaus Mitigation, and GPU Acceleration
+by Ziv Chen, Gal G. Shaviner, Hemanth Chandravamsi, Shimon Pisnoy, Steven H. Frankel, Uzi Pereg
+https://arxiv.org/abs/2506.23246
+
 ## When to use
 
 - You want a fast, differentiable quantum layer inside a PyTorch model (`QLayer`/`Circuit`).
@@ -25,16 +30,19 @@ Performance on other GPUs has not been tuned and may differ. Multi-GPU usage is 
 currently available.
 
 ## Current supported features
-- Quantum circuit construction with common ansatzes:
-    - Strongly entangling (2 versions)
-    - Cross mesh (3 versions)
-    - No entanglement
-- Angle embedding:
-    - 'none'
-    - 'scale' (without bias)
-    - 'scale_with_bias' 
-    - 'asin'
-    - 'acos'
+- Quantum circuit construction with 6 common ansatzes:
+    - strongly_entangling
+    - strongly_entangling_all_to_all
+    - cross_mesh
+    - cross_mesh_2_rots
+    - cross_mesh_cx_rot
+    - no_entanglement_ansatz
+- 5 Angle embedding scaling methods: (intended for usage with a tanh activation function before the quantum layer)
+    - acos: acos(angles) -> output in [0, pi]
+    - asin: asin(angles) + pi/2 -> output in [0, pi]
+    - scale_with_bias(scale): (angles + 1) * (scale/2) -> output in [0, pi]  # usually scale is set to pi
+    - scale(scale): angles * scale -> output in [-pi, pi]  # usually scale is set to pi
+    - None: angles -> output in [-1, 1]
 - Data reuploading (significant cost addition for the simulation running time and memory)
 - Measurement of expectation values in Z-basis
 - Differentiable with PyTorch autograd
@@ -95,23 +103,6 @@ circuit = Circuit(n_qubits=4, n_layers=2, ansatz_name="cross_mesh", config=cfg)
 x = torch.rand(8, 4)
 y = circuit(x)
 ```
-
-## Available ansatz names
-
-- strongly_entangling
-- strongly_entangling_all_to_all
-- cross_mesh
-- cross_mesh_2_rots
-- cross_mesh_cx_rot
-- no_entanglement_ansatz
-
-## Available scalings names (intended for usage with a tanh activation function before the quantum layer)
-
-- acos: acos(angles) -> output in [0, pi]
-- asin: asin(angles) + pi/2 -> output in [0, pi]
-- scale_with_bias(scale): (angles + 1) * (scale/2) -> output in [0, pi]  # usually scale is set to pi
-- scale(scale): angles * scale -> output in [-pi, pi]  # usually scale is set to pi
-- None: angles -> output in [-1, 1]
 
 ## Low-level functions
 
