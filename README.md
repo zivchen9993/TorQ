@@ -49,7 +49,7 @@ currently available.
 - Measurement of expectation values in Z-basis
 - Differentiable with PyTorch autograd
 
-- to benchmark performance against PennyLane, please use the TorQ-bench repository:
+- To benchmark performance against PennyLane, please use the TorQ-bench repository:
 https://github.com/zivchen9993/TorQ-bench
 
 ## Limitations
