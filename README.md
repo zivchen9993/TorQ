@@ -107,7 +107,7 @@ y = circuit(x)
 - asin: asin(angles) + pi/2 -> output in [0, pi]
 - scale_with_bias(scale): (angles + 1) * (scale/2) -> output in [0, pi]  # usually scale is set to pi
 - scale(scale): angles * scale -> output in [-pi, pi]  # usually scale is set to pi
-- None: angles
+- None: angles -> output in [-1, 1]
 
 ## Low-level functions
 
