@@ -12,7 +12,6 @@ except ImportError:
     _USE_CUQUANTUM = False
 
 _CNOT_PERM_CACHE = {}
-_CNOT_LADDER_PERM_CACHE = {}
 
 def multi_dim_tensor_product(*args):
     """
@@ -163,22 +162,32 @@ def apply_single_qubit_wall_batched(state, gates, n_qubits, qubit_order="msb"):
     else:
         raise ValueError("apply_single_qubit_wall_batched: gates must be [B,n,2,2] or [n,2,2]")
 
-    qubit_order = "msb" if qubit_order == "msb" else "lsb"
+    idx = torch.arange(dim, device=state.device)
 
     for q in range(n):
-        q_msb = q if qubit_order == "msb" else (n - 1 - q)
-        left = 1 << q_msb
-        right = 1 << (n - q_msb - 1)
+        # stride for the chosen qubit bit
+        if qubit_order == "msb":
+            stride = 1 << (n - 1 - q)
+        else:  # little-endian
+            stride = 1 << q
 
-        psi = state.reshape(B, left, 2, right)  # contiguous view
+        # indices with bit q == 0, and their paired indices with bit q == 1
+        i0 = idx[(idx // stride) % 2 == 0]
+        i1 = i0 + stride
+
+        v = torch.stack([state[:, i0], state[:, i1]], dim=2)      # [B, M, 2]
+        v = v.transpose(1, 2)                                     # [B, 2, M]
         if per_batch:
-            g = gates[:, q].unsqueeze(1)        # [B, 1, 2, 2]
-            out = torch.matmul(g, psi)          # [B, left, 2, right]
+            g = gates[:, q]                                       # [B, 2, 2]
+            out = torch.matmul(g, v)                              # [B, 2, M]
         else:
-            g = gates[q]                         # [2, 2]
-            out = torch.matmul(g, psi)           # [B, left, 2, right]
+            g = gates[q]                                          # [2, 2]
+            out = torch.matmul(g, v)                              # [B, 2, M]
+        out = out.transpose(1, 2).contiguous()                    # [B, M, 2]
 
-        state = out.reshape(B, dim)
+        # scatter back
+        state[:, i0] = out[:, :, 0]
+        state[:, i1] = out[:, :, 1]
 
     output = state
     if squeeze_last:
@@ -187,58 +196,6 @@ def apply_single_qubit_wall_batched(state, gates, n_qubits, qubit_order="msb"):
     if not torch.isfinite(output).all():   raise RuntimeError("apply_single_qubit_wall_batched: output non-finite")
     ####################
     return output
-
-
-def apply_cnot_batched(state, n_qubits, control_qubit_id, target_qubit_id, qubit_order="msb"):
-    """
-    Apply a CNOT gate to a batched state via index permutation.
-    state: [B, 2**n] or [B, 2**n, 1]
-    """
-    ####### Protection #######
-    if not torch.isfinite(state).all(): raise RuntimeError("apply_cnot_batched: state non-finite (in)")
-    ####################
-    squeeze_last = False
-    if state.dim() == 3 and state.shape[-1] == 1:
-        squeeze_last = True
-        state = state.squeeze(-1)
-
-    B, dim = state.shape
-    n = n_qubits
-    if dim != (1 << n):
-        raise ValueError("apply_cnot_batched: state length mismatch")
-
-    perm = _get_cnot_perm(n, control_qubit_id, target_qubit_id, qubit_order, state.device)
-    out = state.index_select(1, perm)
-
-    if squeeze_last:
-        out = out.unsqueeze(-1)
-    ####### Protection #######
-    if not torch.isfinite(out).all():   raise RuntimeError("apply_cnot_batched: output non-finite")
-    ####################
-    return out
-
-
-def apply_cnot_ladder_batched(state, n_qubits, r=0, qubit_order="msb"):
-    """
-    Apply the same CNOT ladder as get_cnot_ladder, but directly on the state vector.
-    """
-    if n_qubits <= 1:
-        return state
-    squeeze_last = False
-    if state.dim() == 3 and state.shape[-1] == 1:
-        squeeze_last = True
-        state = state.squeeze(-1)
-
-    B, dim = state.shape
-    n = n_qubits
-    if dim != (1 << n):
-        raise ValueError("apply_cnot_ladder_batched: state length mismatch")
-
-    perm = _get_cnot_ladder_perm(n, r, qubit_order, state.device)
-    out = state.index_select(1, perm)
-    if squeeze_last:
-        out = out.unsqueeze(-1)
-    return out
 
 
 def _get_cnot_perm(n_qubits, control_qubit_id, target_qubit_id, qubit_order, device):
@@ -263,33 +220,3 @@ def _get_cnot_perm(n_qubits, control_qubit_id, target_qubit_id, qubit_order, dev
 
     _CNOT_PERM_CACHE[key] = perm
     return perm
-
-
-def _get_cnot_ladder_perm(n_qubits, r, qubit_order, device):
-    qubit_order = "msb" if qubit_order == "msb" else "lsb"
-    key = (n_qubits, r, qubit_order, device.type, device.index)
-    perm = _CNOT_LADDER_PERM_CACHE.get(key)
-    if perm is not None:
-        return perm
-
-    dim = 1 << n_qubits
-    idx = torch.arange(dim, dtype=torch.long)
-    perm_old_to_new = idx.clone()
-    for control_qubit_id in range(n_qubits):
-        target_qubit_id = (control_qubit_id + r + 1) % n_qubits
-        if qubit_order == "msb":
-            ctrl_bit = 1 << (n_qubits - 1 - control_qubit_id)
-            tgt_bit = 1 << (n_qubits - 1 - target_qubit_id)
-        else:
-            ctrl_bit = 1 << control_qubit_id
-            tgt_bit = 1 << target_qubit_id
-
-        mask = (perm_old_to_new & ctrl_bit) != 0
-        perm_old_to_new[mask] ^= tgt_bit
-
-    perm_new_to_old = torch.empty_like(perm_old_to_new)
-    perm_new_to_old[perm_old_to_new] = idx
-    perm_new_to_old = perm_new_to_old.to(device=device)
-
-    _CNOT_LADDER_PERM_CACHE[key] = perm_new_to_old
-    return perm_new_to_old

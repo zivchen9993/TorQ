@@ -58,60 +58,40 @@ class QLayer(nn.Module):
                 basis=self.basis_angle_embedding,
             )  # [B, n, 2, 2]
 
+        angles_reparametrize = None
+        if self.reparametrize_sin_cos:
+            angles_reparametrize = torch.atan2(torch.sin(self.params), torch.cos(self.params))
+
+        reps = max(self.data_reupload_every, 1)
         for layer in range(self.n_layers):
-            reps = max(self.data_reupload_every, 1)
             for d_reup in range(reps):
                 if self.reparametrize_sin_cos:
-                    angles_reparametrize = torch.atan2(torch.sin(self.params), torch.cos(self.params))
                     w = angles_reparametrize[layer, d_reup]
                 else:
                     w = self.params[layer, d_reup]
                 idx = d_reup if self.data_reupload_every else layer
-                fast_state = self._apply_fast_layer(state, idx, w)
-                if fast_state is None:
-                    U = self.ansatz.layer_op(idx, w)  # [2**n, 2**n]
-                    state = tq.apply_matrix(state, U)
-                else:
-                    state = fast_state
+                U = self.ansatz.layer_op(idx, w)  # [2**n, 2**n]
+                state = tq.apply_matrix(state, U)
 
             if self.data_reupload_every:
                 state = tq.data_reuploading(state, data_gates).squeeze(-1)  # [B,2**n]
 
         if self.data_reupload_every:
+            angles_reparametrize_last = None
+            if self.reparametrize_sin_cos:
+                angles_reparametrize_last = torch.atan2(
+                    torch.sin(self.params_last_layer_reupload),
+                    torch.cos(self.params_last_layer_reupload),
+                )
             for d_reup in range(self.data_reupload_every):
                 if self.reparametrize_sin_cos:
-                    angles_reparametrize = torch.atan2(torch.sin(self.params_last_layer_reupload),
-                                                       torch.cos(self.params_last_layer_reupload))
-                    w = angles_reparametrize[d_reup]
+                    w = angles_reparametrize_last[d_reup]
                 else:
                     w = self.params_last_layer_reupload[d_reup]
-                fast_state = self._apply_fast_layer(state, d_reup, w)
-                if fast_state is None:
-                    U = self.ansatz.layer_op(layer_idx=d_reup, weights=w)  # [2**n, 2**n]
-                    state = tq.apply_matrix(state, U)
-                else:
-                    state = fast_state
+                U = self.ansatz.layer_op(layer_idx=d_reup, weights=w)  # [2**n, 2**n]
+                state = tq.apply_matrix(state, U)
 
         return tq.measure(state, self.observable)
-
-    def _apply_fast_layer(self, state, layer_idx, weights):
-        """
-        Fast state-vector path for common ansatzes to avoid building full 2**n unitary.
-        Returns updated state or None to fall back to full-matrix path.
-        """
-        if self.ansatz_name in ("strongly_entangling", "strongly_entangling_all_to_all", "no_entanglement_ansatz"):
-            gates = tq.get_rot_gate(weights)  # [n_qubits, 2, 2]
-            state = tq.Ops.apply_single_qubit_wall_batched(
-                state, gates, self.n_qubits, qubit_order="msb"
-            )
-            if self.ansatz_name == "no_entanglement_ansatz":
-                return state
-            r = 0 if self.ansatz_name == "strongly_entangling" else layer_idx
-            state = tq.Ops.apply_cnot_ladder_batched(
-                state, self.n_qubits, r=r, qubit_order="msb"
-            )
-            return state
-        return None
 
     def param_init(self, weights=None, weights_last_layer_data_re=None, param_init_dict=None, layer_idx=0):
         with torch.no_grad():
