@@ -166,7 +166,7 @@ def cross_mesh_single_layer(n_qubits, weights,
     return ops.multi_dim_matmul_reversed(rot_wall, cross_mesh_layer)
 
 
-def strongly_entangling_single_layer_with_precompute(n_qubits, weights, cnot_layer=None):
+def strongly_entangling_single_layer(n_qubits, weights, cnot_layer=None):
     """
         Creates a single strongly entangling layer.
         weights: tensor of shape [n_qubits, 3] (shared for all batch elements)

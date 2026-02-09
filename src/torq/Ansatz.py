@@ -9,7 +9,7 @@ class BaseAnsatz:
         self.L = n_layers
         self.device = device
     # override in subclasses
-    param_shape: tuple = ()
+    param_shape: tuple = ()  # TODO: the parameter_shape is "per_layer" every time, probably we can just hardcode that and remove this attribute.
 
 
     def layer_op(self, layer_idx: int, weights: torch.Tensor) -> torch.Tensor:
@@ -23,12 +23,12 @@ class StronglyEntangling(BaseAnsatz):
         super().__init__(n_qubits, n_layers, device)
         # one CNOT ladder reused for all layers
         # uses the likable path so dtype/device are inferred from a tensor argument
-        dummy = torch.empty(1, device=device)
+        dummy = torch.empty(1, device=device)  # TODO: is the dummy really needed? can we just call get_cnot_ladder with r=0 and no x argument?
         self.cnot = aq.get_cnot_ladder(n_qubits, r=0, x=dummy)  # precompute once
 
     def layer_op(self, layer_idx, weights):
         # weights: [n_qubits,3]
-        return aq.strongly_entangling_single_layer_with_precompute(self.n, weights, self.cnot).to(weights.device)
+        return aq.strongly_entangling_single_layer(self.n, weights, self.cnot).to(weights.device)
 
 
 class StronglyEntanglingAllToAll(BaseAnsatz):
@@ -44,7 +44,7 @@ class StronglyEntanglingAllToAll(BaseAnsatz):
         ]
 
     def layer_op(self, layer_idx, weights):
-        return aq.strongly_entangling_single_layer_with_precompute(self.n, weights, self.cnots[layer_idx]).to(weights.device)
+        return aq.strongly_entangling_single_layer(self.n, weights, self.cnots[layer_idx]).to(weights.device)
 
 
 class CrossMesh(BaseAnsatz):
