@@ -67,8 +67,12 @@ class QLayer(nn.Module):
                 else:
                     w = self.params[layer, d_reup]
                 idx = d_reup if self.data_reupload_every else layer
-                U = self.ansatz.layer_op(idx, w)  # [2**n, 2**n]
-                state = tq.apply_matrix(state, U)
+                fast_state = self._apply_fast_layer(state, idx, w)
+                if fast_state is None:
+                    U = self.ansatz.layer_op(idx, w)  # [2**n, 2**n]
+                    state = tq.apply_matrix(state, U)
+                else:
+                    state = fast_state
 
             if self.data_reupload_every:
                 state = tq.data_reuploading(state, data_gates).squeeze(-1)  # [B,2**n]
@@ -81,10 +85,33 @@ class QLayer(nn.Module):
                     w = angles_reparametrize[d_reup]
                 else:
                     w = self.params_last_layer_reupload[d_reup]
-                U = self.ansatz.layer_op(layer_idx=d_reup, weights=w)  # [2**n, 2**n]
-                state = tq.apply_matrix(state, U)
+                fast_state = self._apply_fast_layer(state, d_reup, w)
+                if fast_state is None:
+                    U = self.ansatz.layer_op(layer_idx=d_reup, weights=w)  # [2**n, 2**n]
+                    state = tq.apply_matrix(state, U)
+                else:
+                    state = fast_state
 
         return tq.measure(state, self.observable)
+
+    def _apply_fast_layer(self, state, layer_idx, weights):
+        """
+        Fast state-vector path for common ansatzes to avoid building full 2**n unitary.
+        Returns updated state or None to fall back to full-matrix path.
+        """
+        if self.ansatz_name in ("strongly_entangling", "strongly_entangling_all_to_all", "no_entanglement_ansatz"):
+            gates = tq.get_rot_gate(weights)  # [n_qubits, 2, 2]
+            state = tq.Ops.apply_single_qubit_wall_batched(
+                state, gates, self.n_qubits, qubit_order="msb"
+            )
+            if self.ansatz_name == "no_entanglement_ansatz":
+                return state
+            r = 0 if self.ansatz_name == "strongly_entangling" else layer_idx
+            state = tq.Ops.apply_cnot_ladder_batched(
+                state, self.n_qubits, r=r, qubit_order="msb"
+            )
+            return state
+        return None
 
     def param_init(self, weights=None, weights_last_layer_data_re=None, param_init_dict=None, layer_idx=0):
         with torch.no_grad():

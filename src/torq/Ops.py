@@ -1,6 +1,7 @@
 import torch
 import string
 import math
+from functools import lru_cache
 from . import SingleQubitGates as single
 from ._like import likeable
 
@@ -10,6 +11,8 @@ try:
     _USE_CUQUANTUM = False
 except ImportError:
     _USE_CUQUANTUM = False
+
+_CNOT_PERM_CACHE = {}
 
 def multi_dim_tensor_product(*args):
     """
@@ -145,31 +148,141 @@ def apply_single_qubit_wall_batched(state, gates, n_qubits, qubit_order="msb"):
 
     B, dim = state.shape
     n = n_qubits
-    idx = torch.arange(dim, device=state.device)
+    if dim != (1 << n):
+        raise ValueError("apply_single_qubit_wall_batched: state length mismatch")
+
+    # gates: [B, n, 2, 2] or [n, 2, 2]
+    if gates.dim() == 4:
+        per_batch = True
+        if gates.shape[0] != B or gates.shape[1] != n:
+            raise ValueError("apply_single_qubit_wall_batched: gates shape mismatch")
+    elif gates.dim() == 3:
+        per_batch = False
+        if gates.shape[0] != n:
+            raise ValueError("apply_single_qubit_wall_batched: gates shape mismatch")
+    else:
+        raise ValueError("apply_single_qubit_wall_batched: gates must be [B,n,2,2] or [n,2,2]")
+
+    # Reshape into an explicit tensor product layout: [B, 2, 2, ..., 2]
+    psi = state.reshape(B, *([2] * n))
+    perms = _qubit_permutations(n, qubit_order)
 
     for q in range(n):
-        # stride for the chosen qubit bit
-        if qubit_order == "msb":
-            stride = 1 << (n - 1 - q)
-        else:  # little-endian
-            stride = 1 << q
+        perm, inv = perms[q]
+        if perm is None:
+            psi_q = psi
+        else:
+            # bring the target qubit axis to position 1
+            psi_q = psi.permute(perm)
 
-        # indices with bit q == 0, and their paired indices with bit q == 1
-        i0 = idx[(idx // stride) % 2 == 0]
-        i1 = i0 + stride
+        orig_shape = psi_q.shape
+        psi_q = psi_q.reshape(B, 2, -1)      # [B, 2, M]
 
-        v = torch.stack([state[:, i0], state[:, i1]], dim=2)      # [B, M, 2]
-        v = v.transpose(1, 2)                                     # [B, 2, M]
-        g = gates[:, q]                                           # [B, 2, 2]
-        out = torch.matmul(g, v)                                  # [B, 2, M]
-        out = out.transpose(1, 2).contiguous()                    # [B, M, 2]
+        if per_batch:
+            g = gates[:, q]                  # [B, 2, 2]
+            out = torch.bmm(g, psi_q)        # [B, 2, M]
+        else:
+            g = gates[q]                     # [2, 2]
+            out = torch.matmul(g, psi_q)     # [B, 2, M] (broadcast)
 
-        # scatter back
-        state[:, i0] = out[:, :, 0]
-        state[:, i1] = out[:, :, 1]
+        out = out.reshape(orig_shape)        # [B, 2, 2, ..., 2]
 
-    output = state.unsqueeze(-1) if squeeze_last else state
+        if perm is None:
+            psi = out
+        else:
+            psi = out.permute(inv)
+
+    output = psi.reshape(B, dim)
+    if squeeze_last:
+        output = output.unsqueeze(-1)
     ####### Protection #######
     if not torch.isfinite(output).all():   raise RuntimeError("apply_single_qubit_wall_batched: output non-finite")
     ####################
     return output
+
+
+@lru_cache(maxsize=None)
+def _qubit_permutations(n_qubits: int, qubit_order: str):
+    qubit_order = "msb" if qubit_order == "msb" else "lsb"
+    perms = []
+    for q in range(n_qubits):
+        if qubit_order == "msb":
+            axis = 1 + q
+        else:  # lsb
+            axis = 1 + (n_qubits - 1 - q)
+
+        if axis == 1:
+            perms.append((None, None))
+            continue
+
+        perm = (0, axis, *[i for i in range(1, n_qubits + 1) if i != axis])
+        inv = [0] * (n_qubits + 1)
+        for i, p in enumerate(perm):
+            inv[p] = i
+        perms.append((perm, tuple(inv)))
+    return tuple(perms)
+
+
+def apply_cnot_batched(state, n_qubits, control_qubit_id, target_qubit_id, qubit_order="msb"):
+    """
+    Apply a CNOT gate to a batched state via index permutation.
+    state: [B, 2**n] or [B, 2**n, 1]
+    """
+    ####### Protection #######
+    if not torch.isfinite(state).all(): raise RuntimeError("apply_cnot_batched: state non-finite (in)")
+    ####################
+    squeeze_last = False
+    if state.dim() == 3 and state.shape[-1] == 1:
+        squeeze_last = True
+        state = state.squeeze(-1)
+
+    B, dim = state.shape
+    n = n_qubits
+    if dim != (1 << n):
+        raise ValueError("apply_cnot_batched: state length mismatch")
+
+    perm = _get_cnot_perm(n, control_qubit_id, target_qubit_id, qubit_order, state.device)
+    out = state.index_select(1, perm)
+
+    if squeeze_last:
+        out = out.unsqueeze(-1)
+    ####### Protection #######
+    if not torch.isfinite(out).all():   raise RuntimeError("apply_cnot_batched: output non-finite")
+    ####################
+    return out
+
+
+def apply_cnot_ladder_batched(state, n_qubits, r=0, qubit_order="msb"):
+    """
+    Apply the same CNOT ladder as get_cnot_ladder, but directly on the state vector.
+    """
+    if n_qubits <= 1:
+        return state
+    for control_qubit_id in range(n_qubits):
+        target_qubit_id = (control_qubit_id + r + 1) % n_qubits
+        state = apply_cnot_batched(state, n_qubits, control_qubit_id, target_qubit_id, qubit_order=qubit_order)
+    return state
+
+
+def _get_cnot_perm(n_qubits, control_qubit_id, target_qubit_id, qubit_order, device):
+    qubit_order = "msb" if qubit_order == "msb" else "lsb"
+    key = (n_qubits, control_qubit_id, target_qubit_id, qubit_order, device.type, device.index)
+    perm = _CNOT_PERM_CACHE.get(key)
+    if perm is not None:
+        return perm
+
+    idx = torch.arange(1 << n_qubits, dtype=torch.long)
+    if qubit_order == "msb":
+        ctrl_bit = 1 << (n_qubits - 1 - control_qubit_id)
+        tgt_bit = 1 << (n_qubits - 1 - target_qubit_id)
+    else:
+        ctrl_bit = 1 << control_qubit_id
+        tgt_bit = 1 << target_qubit_id
+
+    mask = (idx & ctrl_bit) != 0
+    perm = idx.clone()
+    perm[mask] ^= tgt_bit
+    perm = perm.to(device=device)
+
+    _CNOT_PERM_CACHE[key] = perm
+    return perm
