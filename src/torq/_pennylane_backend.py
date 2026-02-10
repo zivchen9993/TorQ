@@ -104,9 +104,9 @@ def _load_pennylane_comparison_class():
 def _select_pennylane_circuit(pennylane_backend, ansatz_name: str, data_reupload_every: int):
     if data_reupload_every:
         match ansatz_name:
-            case "strongly_entangling":
+            case "basic_entangling":
                 return pennylane_backend.data_re_circuit_strongly_entangling()
-            case "strongly_entangling_all_to_all":
+            case "strongly_entangling":
                 return pennylane_backend.data_re_circuit_strongly_entangling_all_to_all()
             case "cross_mesh":
                 return pennylane_backend.data_re_circuit_cross_mesh()
@@ -117,9 +117,9 @@ def _select_pennylane_circuit(pennylane_backend, ansatz_name: str, data_reupload
             case _:
                 return None
     match ansatz_name:
-        case "strongly_entangling":
+        case "basic_entangling":
             return pennylane_backend.circuit_strongly_entangling()
-        case "strongly_entangling_all_to_all":
+        case "strongly_entangling":
             return pennylane_backend.circuit_strongly_entangling_all_to_all()
         case "cross_mesh":
             return pennylane_backend.circuit_cross_mesh()

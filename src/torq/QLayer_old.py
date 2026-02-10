@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 
 class QLayer(nn.Module):
-    def __init__(self, n_qubits=3, n_layers=1, ansatz_name="strongly_entangling", config=None, weights=None,
+    def __init__(self, n_qubits=3, n_layers=1, ansatz_name="basic_entangling", config=None, weights=None,
                  weights_last_layer_data_re=None, q_layer_idx=0, param_init_dict=None, basis_angle_embedding='X'):
         super().__init__()
         self.n_qubits = n_qubits
@@ -280,7 +280,7 @@ class QLayer(nn.Module):
 #             else:
 #                 weights = torch.rand(n_layers, n_qubits, 3)
 #             penny = qml.qml_sanity_check(n_qubits=n_qubits, n_layers=n_layers, weights=weights)
-#             ansatz_name = "strongly_entangling"
+#             ansatz_name = "basic_entangling"
 #             qc = penny.circuit_strongly_entangling()
 #         elif ans == 4:
 #             if zero_weights:
@@ -288,7 +288,7 @@ class QLayer(nn.Module):
 #             else:
 #                 weights = torch.rand(n_layers, n_qubits, 3)
 #             penny = qml.qml_sanity_check(n_qubits=n_qubits, n_layers=n_layers, weights=weights)
-#             ansatz_name = "strongly_entangling_all_to_all"
+#             ansatz_name = "strongly_entangling"
 #             qc = penny.circuit_strongly_entangling_all_to_all()
 #         else:
 #             raise ValueError("Invalid ansatz name")

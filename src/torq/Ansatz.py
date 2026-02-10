@@ -28,7 +28,7 @@ class StronglyEntangling(BaseAnsatz):
 
     def layer_op(self, layer_idx, weights):
         # weights: [n_qubits,3]
-        return aq.strongly_entangling_single_layer(self.n, weights, self.cnot).to(weights.device)
+        return aq.basic_entangling_single_layer(self.n, weights, self.cnot).to(weights.device)
 
 
 class StronglyEntanglingAllToAll(BaseAnsatz):
@@ -88,9 +88,9 @@ class NoEntanglement(BaseAnsatz):
 
 
 def make_ansatz(name: str, n_qubits: int, n_layers: int, device=None) -> BaseAnsatz:
-    if name == "strongly_entangling":
+    if name == "basic_entangling":
         return StronglyEntangling(n_qubits, n_layers, device)
-    if name == "strongly_entangling_all_to_all":
+    if name == "strongly_entangling":
         return StronglyEntanglingAllToAll(n_qubits, n_layers, device)
     if name in ("cross_mesh", "cross_mesh_2_rots", "cross_mesh_cx_rot"):
         return CrossMesh(n_qubits, n_layers, name, device)

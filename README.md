@@ -33,8 +33,8 @@ currently available.
 
 ## Current supported features
 - Quantum circuit construction with 6 common ansatzes:
+    - basic_entangling
     - strongly_entangling
-    - strongly_entangling_all_to_all
     - cross_mesh
     - cross_mesh_2_rots
     - cross_mesh_cx_rot
@@ -74,7 +74,7 @@ n_qubits = 4
 n_layers = 2
 
 cfg = CircuitConfig(data_reupload_every=0)
-circuit = Circuit(n_qubits=n_qubits, n_layers=n_layers, ansatz_name="strongly_entangling", config=cfg)
+circuit = Circuit(n_qubits=n_qubits, n_layers=n_layers, ansatz_name="basic_entangling", config=cfg)
 
 x = torch.rand(8, n_qubits)
 y = circuit(x)
@@ -87,7 +87,7 @@ import torch
 from torq.simple import Circuit, CircuitConfig
 
 cfg = CircuitConfig(angle_scaling=torch.pi, scale_with_bias=False)
-circuit = Circuit(n_qubits=4, n_layers=2, ansatz_name="strongly_entangling", config=cfg)
+circuit = Circuit(n_qubits=4, n_layers=2, ansatz_name="basic_entangling", config=cfg)
 
 x = torch.rand(8, 4)
 y = circuit(x)

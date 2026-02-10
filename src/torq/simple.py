@@ -48,7 +48,7 @@ class Circuit(nn.Module):
         self,
         n_qubits: int,
         n_layers: int,
-        ansatz_name: str = "strongly_entangling",
+        ansatz_name: str = "basic_entangling",
         config: CircuitConfig | None = None,
         weights: torch.Tensor | None = None,
         weights_last_layer_data_re: torch.Tensor | None = None,
