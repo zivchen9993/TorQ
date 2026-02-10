@@ -156,50 +156,50 @@ class QLayer(nn.Module):
                 self.params_last_layer_reupload = nn.Parameter(parameters_reupload)
 
 
-class QLayer(nn.Module):
-    def __init__(self, n_qubits=3, n_layers=1, ansatz_name="basic_entangling", config=None,
-                 basis_angle_embedding='X'):
-        super().__init__()
-        self.n_qubits = n_qubits
-        self.n_layers = n_layers
-        self.config = config
-        self.ansatz_name = ansatz_name
-        self.basis_angle_embedding = basis_angle_embedding
-
-        self.angle_scaling_method = getattr(self.config, 'angle_scaling_method', 'none')
-        self.angle_scaling = getattr(self.config, 'angle_scaling', 1.0)
-
-        # === ansatz selection + parameter tensor shape ===
-        # build ansatz object (holds any precomputes)
-        # NOTE: device of params is not known yet; we’ll move precomputes lazily on first forward if needed
-        self.ansatz = make_ansatz(ansatz_name, n_qubits, n_layers, device=None)
-
-        # sigma_Z observable
-        self.observable = tq.sigma_Z_like(x=self.params)  # keeps dtype/device consistent via likeable
-        self._optional_backend = maybe_create_pennylane_backend(self)  # for benchmarking and testing against pennylane; if it is None, the regular forward will be used. for benchmarking, the TorQ-bench library should be used.
-
-    def forward(self, x):
-        if not torch.isfinite(self.params).all():
-            raise ValueError(f"QLayer.params has NaN: {self.params}")
-        if self._optional_backend is not None:
-            return self._optional_backend.forward(x)
-        state = tq.angle_embedding(
-            x,
-            angle_scaling_method=self.angle_scaling_method,
-            angle_scaling=self.angle_scaling,
-            basis=self.basis_angle_embedding,
-        ).squeeze(-1)  # [B,2**n]
-
-        angles_reparametrize = None
-        if self.reparametrize_sin_cos:
-            angles_reparametrize = torch.atan2(torch.sin(self.params), torch.cos(self.params))
-
-        for layer in range(self.n_layers):
-            if self.reparametrize_sin_cos:
-                w = angles_reparametrize[layer]
-            else:
-                w = self.params[layer]
-            U = self.ansatz.layer_op(layer, w)  # [2**n, 2**n]
-            state = tq.apply_matrix(state, U)
-
-        return tq.measure(state, self.observable)
+# class QLayer(nn.Module):
+#     def __init__(self, n_qubits=3, n_layers=1, ansatz_name="basic_entangling", config=None,
+#                  basis_angle_embedding='X'):
+#         super().__init__()
+#         self.n_qubits = n_qubits
+#         self.n_layers = n_layers
+#         self.config = config
+#         self.ansatz_name = ansatz_name
+#         self.basis_angle_embedding = basis_angle_embedding
+#
+#         self.angle_scaling_method = getattr(self.config, 'angle_scaling_method', 'none')
+#         self.angle_scaling = getattr(self.config, 'angle_scaling', 1.0)
+#
+#         # === ansatz selection + parameter tensor shape ===
+#         # build ansatz object (holds any precomputes)
+#         # NOTE: device of params is not known yet; we’ll move precomputes lazily on first forward if needed
+#         self.ansatz = make_ansatz(ansatz_name, n_qubits, n_layers, device=None)
+#
+#         # sigma_Z observable
+#         self.observable = tq.sigma_Z_like(x=self.params)  # keeps dtype/device consistent via likeable
+#         self._optional_backend = maybe_create_pennylane_backend(self)  # for benchmarking and testing against pennylane; if it is None, the regular forward will be used. for benchmarking, the TorQ-bench library should be used.
+#
+#     def forward(self, x):
+#         if not torch.isfinite(self.params).all():
+#             raise ValueError(f"QLayer.params has NaN: {self.params}")
+#         if self._optional_backend is not None:
+#             return self._optional_backend.forward(x)
+#         state = tq.angle_embedding(
+#             x,
+#             angle_scaling_method=self.angle_scaling_method,
+#             angle_scaling=self.angle_scaling,
+#             basis=self.basis_angle_embedding,
+#         ).squeeze(-1)  # [B,2**n]
+#
+#         angles_reparametrize = None
+#         if self.reparametrize_sin_cos:
+#             angles_reparametrize = torch.atan2(torch.sin(self.params), torch.cos(self.params))
+#
+#         for layer in range(self.n_layers):
+#             if self.reparametrize_sin_cos:
+#                 w = angles_reparametrize[layer]
+#             else:
+#                 w = self.params[layer]
+#             U = self.ansatz.layer_op(layer, w)  # [2**n, 2**n]
+#             state = tq.apply_matrix(state, U)
+#
+#         return tq.measure(state, self.observable)

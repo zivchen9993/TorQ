@@ -16,7 +16,7 @@ class BaseAnsatz:
         raise NotImplementedError
 
 
-class StronglyEntangling(BaseAnsatz):
+class BasicEntangling(BaseAnsatz):
     param_shape = ("per_layer", (None, 3))  # resolved later to (n_qubits,3)
 
     def __init__(self, n_qubits, n_layers, device=None):
@@ -28,10 +28,10 @@ class StronglyEntangling(BaseAnsatz):
 
     def layer_op(self, layer_idx, weights):
         # weights: [n_qubits,3]
-        return aq.basic_entangling_single_layer(self.n, weights, self.cnot).to(weights.device)
+        return aq.basic_or_strongly_single_layer(self.n, weights, self.cnot).to(weights.device)
 
 
-class StronglyEntanglingAllToAll(BaseAnsatz):
+class StronglyEntangling(BaseAnsatz):
     param_shape = ("per_layer", (None, 3))
 
     def __init__(self, n_qubits, n_layers, device=None):
@@ -44,7 +44,7 @@ class StronglyEntanglingAllToAll(BaseAnsatz):
         ]
 
     def layer_op(self, layer_idx, weights):
-        return aq.strongly_entangling_single_layer(self.n, weights, self.cnots[layer_idx]).to(weights.device)
+        return aq.basic_or_strongly_single_layer(self.n, weights, self.cnots[layer_idx]).to(weights.device)
 
 
 class CrossMesh(BaseAnsatz):
@@ -89,9 +89,9 @@ class NoEntanglement(BaseAnsatz):
 
 def make_ansatz(name: str, n_qubits: int, n_layers: int, device=None) -> BaseAnsatz:
     if name == "basic_entangling":
-        return StronglyEntangling(n_qubits, n_layers, device)
+        return BasicEntangling(n_qubits, n_layers, device)
     if name == "strongly_entangling":
-        return StronglyEntanglingAllToAll(n_qubits, n_layers, device)
+        return StronglyEntangling(n_qubits, n_layers, device)
     if name in ("cross_mesh", "cross_mesh_2_rots", "cross_mesh_cx_rot"):
         return CrossMesh(n_qubits, n_layers, name, device)
     if name == "no_entanglement_ansatz":

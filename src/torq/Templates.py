@@ -166,9 +166,9 @@ def cross_mesh_single_layer(n_qubits, weights,
     return ops.multi_dim_matmul_reversed(rot_wall, cross_mesh_layer)
 
 
-def strongly_entangling_single_layer(n_qubits, weights, cnot_layer=None):
+def basic_or_strongly_single_layer(n_qubits, weights, cnot_layer=None):
     """
-        Creates a single strongly entangling layer.
+        Creates a single basic or strongly entangling layer, depends on the cnot_layer.
         weights: tensor of shape [n_qubits, 3] (shared for all batch elements)
         Returns: operator of shape [2**n_qubits, 2**n_qubits]
         """

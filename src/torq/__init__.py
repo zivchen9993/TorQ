@@ -14,7 +14,7 @@ from . import Ops, SingleQubitGates, Controls, Templates, Measure  # noqa: F401
 from .Templates import (
     angle_embedding,
     cross_mesh_single_layer,
-    strongly_entangling_single_layer,
+    basic_or_strongly_single_layer,
     global_entanglement_calc,
     get_initial_state,
     get_angle_embedding_sigmas,
@@ -49,7 +49,7 @@ from .simple import Circuit, CircuitConfig
 
 __all__ = [
     "__version__", "Ops", "SingleQubitGates", "Controls", "Templates", "Measure", "get_angle_embedding_sigmas",
-    "angle_embedding", "cross_mesh_single_layer", "strongly_entangling_single_layer",
+    "angle_embedding", "cross_mesh_single_layer", "basic_or_strongly_single_layer",
     "global_entanglement_calc", "get_initial_state",
     "apply_matrix", "multi_dim_tensor_product", "multi_dim_matmul_reversed", "kron_with_replace",
     "measure", "measure_local", "measure_local_Z",
