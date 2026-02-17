@@ -3,13 +3,13 @@ import torch
 import torq as aq
 
 class BaseAnsatz:
-    """Uniform interface: param_shape, layer_op(layer_idx, weights)->[2**n,2**n]."""
+    """Uniform interface: per_layer_param_shape, layer_op(layer_idx, weights)->[2**n,2**n]."""
     def __init__(self, n_qubits: int, n_layers: int, device=None):
         self.n = n_qubits
         self.L = n_layers
         self.device = device
     # override in subclasses
-    param_shape: tuple = ()  # TODO: the parameter_shape is "per_layer" every time, probably we can just hardcode that and remove this attribute.
+    per_layer_param_shape: tuple = ()
 
 
     def layer_op(self, layer_idx: int, weights: torch.Tensor) -> torch.Tensor:
@@ -17,7 +17,7 @@ class BaseAnsatz:
 
 
 class BasicEntangling(BaseAnsatz):
-    param_shape = ("per_layer", (None, 3))  # resolved later to (n_qubits,3)
+    per_layer_param_shape = (None, 3)  # resolved later to (n_qubits, 3)
 
     def __init__(self, n_qubits, n_layers, device=None):
         super().__init__(n_qubits, n_layers, device)
@@ -32,7 +32,7 @@ class BasicEntangling(BaseAnsatz):
 
 
 class StronglyEntangling(BaseAnsatz):
-    param_shape = ("per_layer", (None, 3))
+    per_layer_param_shape = (None, 3)
 
     def __init__(self, n_qubits, n_layers, device=None):
         super().__init__(n_qubits, n_layers, device)
@@ -58,12 +58,12 @@ class CrossMesh(BaseAnsatz):
             self.cross = aq.get_cross_mesh_control_gate_layer(
                 n_qubits, sigma=aq.sigma_X_like, weights=None, device=device
             )
-            self.param_shape = ("per_layer", (n_qubits, 3))
+            self.per_layer_param_shape = (n_qubits, 3)
         elif variant == "cross_mesh":
-            self.param_shape = ("per_layer", (n_qubits**2,))
+            self.per_layer_param_shape = (n_qubits**2,)
             self.cross = None
         elif variant == "cross_mesh_2_rots":
-            self.param_shape = ("per_layer", (n_qubits + n_qubits**2,))
+            self.per_layer_param_shape = (n_qubits + n_qubits**2,)
             self.cross = None
         else:
             raise ValueError("Unknown cross-mesh variant")
@@ -81,7 +81,7 @@ class CrossMesh(BaseAnsatz):
                                               cnot_layer_precomputed=None).to(weights.device)
 
 class NoEntanglement(BaseAnsatz):
-    param_shape = ("per_layer", (None, 3))
+    per_layer_param_shape = (None, 3)
 
     def layer_op(self, layer_idx, weights):
         return aq.get_single_qubit_pauli_rot_ops(self.n, weights, sigma_func=aq.get_rot_gate).to(weights.device)

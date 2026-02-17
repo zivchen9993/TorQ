@@ -100,10 +100,8 @@ class QLayer(nn.Module):
                 if self.data_reupload_every:
                     parameters_reupload = (weights_last_layer_data_re)
             else:
-                # resolve per-layer param shapes from ansatz
-                if self.ansatz.param_shape[0] != "per_layer":
-                    raise RuntimeError("Unexpected param_shape kind")
-                per_layer = self.ansatz.param_shape[1]
+                # resolve per-layer param shape from ansatz
+                per_layer = self.ansatz.per_layer_param_shape
                 # Substitute n_qubits for Nones in the shape
                 resolved = tuple(self.n_qubits if d is None else d for d in
                                  per_layer)  # shape: (n_qubits, n_params_per_layer)  (make sure it is correct
