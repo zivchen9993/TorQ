@@ -18,6 +18,15 @@ def sigma_X_like(*, dtype, device):
 def sigma_Y_like(*, dtype, device):
     return torch.tensor([[0, -1j], [1j, 0]], dtype=dtype, device=device)
 
+@likeable
+def local_obs_like(obs, *, dtype, device):
+    if obs.shape != (2, 2):
+        raise ValueError("local observables are 2x2 tensors")
+    # obs.mT is the conjugate transpose (matrix transpose)
+    if torch.allclose(obs, obs.mT, atol=1e-8, rtol=1e-5):
+        raise ValueError("local observables must be Hermitian, but the provided observable is not conjugate-transpose of itself")
+    return torch.tensor(obs, dtype=dtype, device=device)
+
 #### Projections ####
 @likeable
 def ketbra00_like(*, dtype, device):
