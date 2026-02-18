@@ -23,6 +23,14 @@ class QLayer(nn.Module):
         self.angle_scaling = getattr(self.config, 'angle_scaling', 1.0)
 
         self.reparametrize_sin_cos = getattr(self.config, 'reparametrize_sin_cos', False)
+        if (
+            self.ansatz_name == "strongly_entangling"
+            and self.data_reupload_every > self.n_layers
+        ):
+            raise ValueError(
+                "For ansatz_name='strongly_entangling', data_reupload_every must be "
+                f"<= n_layers (got data_reupload_every={self.data_reupload_every}, n_layers={self.n_layers})."
+            )
         # === ansatz selection + parameter tensor shape ===
         # build ansatz object (holds any precomputes)
         # NOTE: device of params is not known yet; we’ll move precomputes lazily on first forward if needed

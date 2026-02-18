@@ -122,3 +122,27 @@ def test_valid_weight_shapes_for_data_reupload():
     y = circuit(torch.rand(2, 3))
     assert y.shape == (2, 3)
     assert torch.isfinite(y).all()
+
+
+@pytest.mark.full
+def test_strongly_entangling_data_reupload_guard_raises():
+    with pytest.raises(ValueError, match="ansatz_name='strongly_entangling'"):
+        Circuit(
+            n_qubits=3,
+            n_layers=2,
+            ansatz_name="strongly_entangling",
+            config=CircuitConfig(data_reupload_every=3),
+        )
+
+
+@pytest.mark.full
+def test_strongly_entangling_data_reupload_guard_allows_boundary():
+    circuit = Circuit(
+        n_qubits=3,
+        n_layers=2,
+        ansatz_name="strongly_entangling",
+        config=CircuitConfig(data_reupload_every=2),
+    )
+    y = circuit(torch.rand(2, 3))
+    assert y.shape == (2, 3)
+    assert torch.isfinite(y).all()
