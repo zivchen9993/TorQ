@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torq as tq
+import string
 from .Ansatz import make_ansatz
 from ._pennylane_backend import maybe_create_pennylane_backend
 
@@ -29,7 +30,8 @@ class QLayer(nn.Module):
         self.param_init(weights, weights_last_layer_data_re, param_init_dict, q_layer_idx)
 
         # sigma_Z observable like you had
-        self.observable = tq.sigma_Z_like(x=self.params)  # keeps dtype/device consistent via likeable
+
+        self.observable = self.set_observable_for_measurement()  # observables other than Pauli-Z can be used, but with slower performance
         self._optional_backend = maybe_create_pennylane_backend(self)
 
     def forward(self, x):
@@ -94,49 +96,76 @@ class QLayer(nn.Module):
         return tq.measure(state, self.observable)
 
     def param_init(self, weights=None, weights_last_layer_data_re=None, param_init_dict=None, layer_idx=0):
+        # Resolve per-layer parameter shape from the selected ansatz.
+        per_layer = self.ansatz.per_layer_param_shape
+        resolved = tuple(self.n_qubits if d is None else d for d in per_layer)
+        expected_main_shape = (self.n_layers, max(self.data_reupload_every, 1), *resolved)
+        expected_reupload_shape = (self.data_reupload_every, *resolved)
+
         with torch.no_grad():
             if weights is not None:
+                if not isinstance(weights, torch.Tensor):
+                    raise TypeError("weights must be a torch.Tensor when provided.")
                 parameters = weights
-                if self.data_reupload_every:
-                    parameters_reupload = (weights_last_layer_data_re)
-            else:
-                # resolve per-layer param shape from ansatz
-                per_layer = self.ansatz.per_layer_param_shape
-                # Substitute n_qubits for Nones in the shape
-                resolved = tuple(self.n_qubits if d is None else d for d in
-                                 per_layer)  # shape: (n_qubits, n_params_per_layer)  (make sure it is correct
+                # Backward-compatible shape for no data re-upload:
+                # [n_layers, *per_layer] -> [n_layers, 1, *per_layer]
+                if (not self.data_reupload_every) and parameters.dim() == (len(expected_main_shape) - 1):
+                    parameters = parameters.unsqueeze(1)
 
+                if tuple(parameters.shape) != expected_main_shape:
+                    raise ValueError(
+                        f"weights has shape {tuple(parameters.shape)} but expected {expected_main_shape} "
+                        f"for ansatz '{self.ansatz_name}'."
+                    )
+
+                if self.data_reupload_every:
+                    if weights_last_layer_data_re is None:
+                        raise ValueError(
+                            "data_reupload_every > 0 requires weights_last_layer_data_re. "
+                            f"Expected shape: {expected_reupload_shape}."
+                        )
+                    if not isinstance(weights_last_layer_data_re, torch.Tensor):
+                        raise TypeError("weights_last_layer_data_re must be a torch.Tensor when provided.")
+                    parameters_reupload = weights_last_layer_data_re
+                    if tuple(parameters_reupload.shape) != expected_reupload_shape:
+                        raise ValueError(
+                            "weights_last_layer_data_re has shape "
+                            f"{tuple(parameters_reupload.shape)} but expected {expected_reupload_shape}."
+                        )
+                elif weights_last_layer_data_re is not None:
+                    raise ValueError(
+                        "weights_last_layer_data_re was provided but data_reupload_every == 0."
+                    )
+            else:
                 param_scaling = 1.0 if self.reparametrize_sin_cos else 2 * torch.pi
 
                 if getattr(self.config, 'init_identity', False):  # write the 3 fixed initializations better
-                    parameters = torch.zeros(self.n_layers, max(self.data_reupload_every, 1), *resolved)
+                    parameters = torch.zeros(*expected_main_shape)
                     if self.data_reupload_every:
-                        parameters_reupload = torch.zeros(self.data_reupload_every, *resolved)
+                        parameters_reupload = torch.zeros(*expected_reupload_shape)
 
                 elif getattr(self.config, 'init_ones', False):
-                    parameters = torch.pi * torch.ones(self.n_layers, max(self.data_reupload_every, 1), *resolved)
+                    parameters = torch.pi * torch.ones(*expected_main_shape)
                     if self.data_reupload_every:
-                        parameters_reupload = torch.pi * torch.ones(self.data_reupload_every, *resolved)
+                        parameters_reupload = torch.pi * torch.ones(*expected_reupload_shape)
 
                 elif getattr(self.config, 'init_pi_half', False):
-                    parameters = (torch.pi / 2) * torch.ones(self.n_layers, max(self.data_reupload_every, 1), *resolved)
+                    parameters = (torch.pi / 2) * torch.ones(*expected_main_shape)
                     if self.data_reupload_every:
-                        parameters_reupload = (torch.pi / 2) * torch.ones(self.data_reupload_every, *resolved)
+                        parameters_reupload = (torch.pi / 2) * torch.ones(*expected_reupload_shape)
 
                 elif param_init_dict is not None:  # currently initializes all of the layers the same way and adding noise to the first QLayer. could be changed
                     match param_init_dict["numerator"]:
                         case "pi_range":
-                            parameters = torch.pi * torch.rand(self.n_layers, max(self.data_reupload_every, 1), *resolved)
-                            parameters_reupload = torch.pi * torch.rand(self.data_reupload_every, *resolved)
+                            parameters = torch.pi * torch.rand(*expected_main_shape)
+                            parameters_reupload = torch.pi * torch.rand(*expected_reupload_shape)
                         case "2pi_range":
-                            parameters = torch.pi * 2 * (torch.rand(self.n_layers, max(self.data_reupload_every, 1),
-                                                                      *resolved) - 0.5)
-                            parameters_reupload = torch.pi * 2 * (torch.rand(self.data_reupload_every, *resolved) - 0.5)
+                            parameters = torch.pi * 2 * (torch.rand(*expected_main_shape) - 0.5)
+                            parameters_reupload = torch.pi * 2 * (torch.rand(*expected_reupload_shape) - 0.5)
                         case _:  # numerical value
                             init_bound = param_init_dict["numerator"] / param_init_dict["omega_0"]
-                            parameters = init_bound * 2 * (torch.rand(self.n_layers, max(self.data_reupload_every, 1),
-                                                                       *resolved) - 0.5)
-                            parameters_reupload = init_bound * 2 * (torch.rand(self.data_reupload_every, *resolved) - 0.5)
+                            parameters = init_bound * 2 * (torch.rand(*expected_main_shape) - 0.5)
+                            parameters_reupload = init_bound * 2 * (torch.rand(*expected_reupload_shape) - 0.5)
                     noise_all_q_layers = getattr(self.config, 'noise_all_q_layers', False)
                     if (layer_idx == 1) or noise_all_q_layers:  # add noise
                         scale = param_init_dict["S1"] / param_init_dict["omega_0"]
@@ -145,15 +174,31 @@ class QLayer(nn.Module):
                         parameters = parameters + noise
                         parameters_reupload = parameters_reupload + noise_reupload
                 else:
-                    parameters = param_scaling * torch.rand(self.n_layers, max(self.data_reupload_every, 1),
-                                                            *resolved)
-                    parameters_reupload = param_scaling * torch.rand(self.data_reupload_every, *resolved)
+                    parameters = param_scaling * torch.rand(*expected_main_shape)
+                    parameters_reupload = param_scaling * torch.rand(*expected_reupload_shape)
 
             self.params = nn.Parameter(parameters)
             if self.data_reupload_every:
                 self.params_last_layer_reupload = nn.Parameter(parameters_reupload)
 
-
+    def set_observable_for_measurement(self) -> None:
+        observable_name = getattr(self.config, "local_observable_name", "Z")
+        obs_name_lower = observable_name.lower()
+        custom_obs = getattr(self.config, "custom_local_observable", None)
+        match obs_name_lower:
+            case "z" | "pauliz" | "pauli_z" | "sigmaz" | "sigma_z":  # keeps dtype/device consistent via likeable.
+                observable = tq.sigma_Z_like(x=self.params)
+            case "x" | "paulix" | "pauli_x" | "sigmax" | "sigma_x":
+                observable = tq.sigma_X_like(x=self.params)
+            case "y" | "pauliy" | "pauli_y" | "sigmay" | "sigma_y":
+                observable = tq.sigma_Y_like(x=self.params)
+            case "custom" | "custom_hermitian" | "local":
+                if custom_obs is None:
+                    raise ValueError("local_observable_name indicates a custom observable, but custom_local_observable is not set in the config.")
+                observable = tq.local_obs_like(custom_obs, x=self.params)
+            case _:
+                raise ValueError(f"Unsupported observable name: {observable_name!r}. Supported: 'Z', 'X', 'Y', local 2x2 observable.")
+        return observable
 # class QLayer(nn.Module):
 #     def __init__(self, n_qubits=3, n_layers=1, ansatz_name="basic_entangling", config=None,
 #                  basis_angle_embedding='X'):

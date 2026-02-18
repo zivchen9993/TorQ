@@ -46,7 +46,7 @@ currently available.
     - scale(scale): angles * scale -> output in [-pi, pi]  # usually scale is set to pi
     - None: angles -> output in [-1, 1]
 - Data reuploading (significant cost addition for the simulation running time and memory)
-- Measurement of expectation values in Z-basis
+- Measurement of local expectation values (default Pauli-Z)
 - Differentiable with PyTorch autograd
 
 - To benchmark performance against PennyLane, please use the TorQ-bench repository:
@@ -86,7 +86,7 @@ y = circuit(x)
 import torch
 from torq.simple import Circuit, CircuitConfig
 
-cfg = CircuitConfig(angle_scaling=torch.pi, scale_with_bias=False)
+cfg = CircuitConfig(angle_scaling_method="scale", angle_scaling=torch.pi)
 circuit = Circuit(n_qubits=4, n_layers=2, ansatz_name="basic_entangling", config=cfg)
 
 x = torch.rand(8, 4)
@@ -97,7 +97,7 @@ y = circuit(x)
 
 ```python
 import torch
-from TorQ.simple import Circuit, CircuitConfig
+from torq.simple import Circuit, CircuitConfig
 
 cfg = CircuitConfig(data_reupload_every=2)
 circuit = Circuit(n_qubits=4, n_layers=2, ansatz_name="cross_mesh", config=cfg)
@@ -120,4 +120,4 @@ from torq.simple import (
 
 ## License
 
-TBD
+MIT. See `LICENSE`.

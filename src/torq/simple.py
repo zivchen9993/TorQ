@@ -3,9 +3,9 @@
 Example with angle scaling:
 
     import torch
-    from .simple import Circuit, CircuitConfig
+    from torq.simple import Circuit, CircuitConfig
 
-    cfg = CircuitConfig(angle_scaling=torch.pi, scale_with_bias=False)
+    cfg = CircuitConfig(angle_scaling_method="scale", angle_scaling=torch.pi)
     circuit = Circuit(n_qubits=4, n_layers=2, config=cfg)
     y = circuit(torch.rand(8, 4))
 """
@@ -28,7 +28,9 @@ from .SingleQubitGates import sigma_Z_like
 @dataclass
 class CircuitConfig:
     data_reupload_every: int = 0
+    angle_scaling_method: str = "none"
     angle_scaling: float | None = 1.0
+    # Backward-compatible aliases for angle_scaling_method.
     angle_asin: bool = False
     angle_acos: bool = False
     scale_with_bias: bool = False
@@ -39,6 +41,56 @@ class CircuitConfig:
     noise_all_q_layers: bool = False
     pennylane_backend: bool = False
     pennylane_dev_name: str | None = None
+    local_observable_name: str = "Z"
+    custom_local_observable: torch.Tensor | None = None
+
+    def __post_init__(self) -> None:
+        if self.data_reupload_every < 0:
+            raise ValueError("data_reupload_every must be >= 0.")
+
+        methods = {"none", "scale", "scale_with_bias", "asin", "acos"}
+        if self.angle_scaling_method not in methods:
+            raise ValueError(
+                f"angle_scaling_method must be one of {sorted(methods)}. "
+                f"Got: {self.angle_scaling_method!r}"
+            )
+
+        legacy_methods = []
+        if self.angle_asin:
+            legacy_methods.append("asin")
+        if self.angle_acos:
+            legacy_methods.append("acos")
+        if self.scale_with_bias:
+            legacy_methods.append("scale_with_bias")
+
+        if len(legacy_methods) > 1:
+            raise ValueError(
+                "Only one of angle_asin/angle_acos/scale_with_bias may be True."
+            )
+        if legacy_methods:
+            if self.angle_scaling_method != "none":
+                raise ValueError(
+                    "Use either angle_scaling_method or legacy flags "
+                    "(angle_asin/angle_acos/scale_with_bias), not both."
+                )
+            self.angle_scaling_method = legacy_methods[0]
+
+        obs_name = self.local_observable_name.lower()
+        allowed_names = {
+            "z", "pauliz", "pauli_z", "sigmaz", "sigma_z",
+            "x", "paulix", "pauli_x", "sigmax", "sigma_x",
+            "y", "pauliy", "pauli_y", "sigmay", "sigma_y",
+            "custom", "custom_hermitian", "local",
+        }
+        if obs_name not in allowed_names:
+            raise ValueError(
+                f"local_observable_name must be one of {sorted(allowed_names)}. "
+                f"Got: {self.local_observable_name!r}"
+            )
+        if obs_name in {"custom", "custom_hermitian", "local"} and self.custom_local_observable is None:
+            raise ValueError(
+                "custom_local_observable must be provided when local_observable_name is custom."
+            )
 
 
 class Circuit(nn.Module):
