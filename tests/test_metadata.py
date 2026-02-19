@@ -5,7 +5,11 @@ import re
 def test_pyproject_license_is_mit():
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     text = pyproject.read_text(encoding="utf-8")
-    assert re.search(r'^\s*license\s*=\s*"MIT"\s*$', text, flags=re.MULTILINE)
+    assert re.search(
+        r'^\s*license\s*=\s*"MIT"\s*$|^\s*license\s*=\s*\{\s*text\s*=\s*"MIT"\s*\}\s*$',
+        text,
+        flags=re.MULTILINE,
+    )
 
 
 def test_license_file_exists_and_is_mit():

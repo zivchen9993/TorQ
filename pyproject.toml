@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "TorQ"
-version = "0.1.0"
+version = "0.1.1"
 description = "Tensor Operations for Research in Quantum systems."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["torch>=1.13"]
-license = "MIT"
+license = { text = "MIT" }
 classifiers = [
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
