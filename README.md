@@ -61,8 +61,15 @@ https://github.com/zivchen9993/TorQ-bench
 ## Install
 
 ```bash
-pip install -e .
+# install from PyPI
+python -m pip install torq-quantum
+
+# optional: editable install for local development
+python -m pip install -e .
 ```
+
+Note: the PyPI package name is `torq-quantum`, while the Python import path is `torq`.
+
 
 ## Quickstart
 

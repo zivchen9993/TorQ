@@ -2,7 +2,8 @@
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 __version__ = None
-for _dist_name in ("TorQ", "torq"):
+for _dist_name in ("TorQ-quantum", "torq-quantum", "TorQ", "torq"):
+# for _dist_name in ("TorQ-quantum", "torq-quantum"):
     try:
         __version__ = _pkg_version(_dist_name)
         break

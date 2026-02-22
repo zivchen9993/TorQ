@@ -3,8 +3,8 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "TorQ"
-version = "0.1.1"
+name = "TorQ-quantum"
+version = "0.1.2"
 description = "Tensor Operations for Research in Quantum systems."
 readme = "README.md"
 requires-python = ">=3.10"
