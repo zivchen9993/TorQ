@@ -46,7 +46,10 @@ currently available.
     - scale(scale): angles * scale -> output in [-pi, pi]  # usually scale is set to pi
     - None: angles -> output in [-1, 1]
 - Data reuploading (significant cost addition for the simulation running time and memory)
-- Measurement of local expectation values (default Pauli-Z)
+- Measurement of expectation values:
+    - default fast per-qubit local Pauli-Z (`[batch, n_qubits]`)
+    - configurable local/non-local observables per run (`[batch, n_observables]`)
+    - Pauli-string observable sets optimized with chunked vectorization
 - Differentiable with PyTorch autograd
 
 - To benchmark performance against PennyLane, please use the TorQ-bench repository:
@@ -113,6 +116,49 @@ x = torch.rand(8, 4)
 y = circuit(x)
 ```
 
+## Multiple local/non-local observables in one run
+
+Use `CircuitConfig(measurement_observables=...)` to measure many observables in one circuit forward pass.
+
+Each observable spec supports:
+- `{"wires": [...], "pauli": ...}` for Pauli strings (for example `"Z"`, `"ZZ"`, `"XYY"`, `["X","Y"]`)
+- `{"wires": [...], "matrix": ...}` for a Hermitian `2**k x 2**k` matrix on `k` wires
+- optional `coeff` for a real scalar multiplier
+
+```python
+import torch
+from torq.simple import Circuit, CircuitConfig
+
+q = 4
+observables = []
+
+# Z_i for i in [0, q-1]
+for i in range(q):
+    observables.append({"wires": [i], "pauli": "Z"})
+
+# Z_j Z_{j+1} for j in [0, q-2]
+for j in range(q - 1):
+    observables.append({"wires": [j, j + 1], "pauli": "ZZ"})
+
+# X_i for i in [0, q-1]
+for i in range(q):
+    observables.append({"wires": [i], "pauli": "X"})
+
+cfg = CircuitConfig(
+    measurement_observables=observables,
+    pauli_measurement_chunk_size=8,  # tune for throughput/memory
+)
+circuit = Circuit(n_qubits=q, n_layers=2, ansatz_name="basic_entangling", config=cfg)
+
+x = torch.rand(8, q)
+y = circuit(x)
+print(y.shape)  # [8, len(observables)]
+```
+
+Notes:
+- If `measurement_observables` is not set, behavior stays backward-compatible and uses default local measurement.
+- The default per-qubit Pauli-Z path remains the fastest option when that is your only required output.
+
 ## Low-level functions
 
 ```python
@@ -122,6 +168,7 @@ from torq.simple import (
     data_reuploading,
     get_initial_state,
     measure,
+    measure_observables,
 )
 ```
 

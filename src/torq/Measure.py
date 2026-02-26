@@ -100,7 +100,7 @@ def measure_local_observable(state: torch.Tensor, local_observable: torch.Tensor
     outs = []
     for q in range(n):
         psi_q = psi.movedim(1 + q, -1).reshape(B, -1, 2)  # [B, 2**(n-1), 2]
-        rho_q = torch.einsum("bki,bkj->bij", psi_q.conj(), psi_q)  # [B,2,2]
+        rho_q = torch.einsum("bki,bkj->bij", psi_q, psi_q.conj())  # [B,2,2]
         outs.append(torch.einsum("bij,ji->b", rho_q, obs[q]))
     out = torch.stack(outs, dim=1)
     return out.real if torch.is_complex(out) else out
@@ -246,7 +246,8 @@ def _compile_measurement_observable(
                 yz_mask |= bit
             if op == "Y":
                 n_y += 1
-        phase = coeff * ((1j) ** n_y)
+        # In this transformed-ket convention, each Y contributes a factor of -i.
+        phase = coeff * ((-1j) ** n_y)
         return {
             "kind": "pauli",
             "n_qubits": n_qubits,
@@ -371,7 +372,7 @@ def _reduced_density_matrix_on_wires(
     moved_from = [1 + wire for wire in wires]
     moved_to = list(range(1 + n_qubits - k, 1 + n_qubits))
     psi_on_wires = psi.movedim(moved_from, moved_to).reshape(B, -1, 1 << k)
-    return torch.einsum("bri,brj->bij", psi_on_wires.conj(), psi_on_wires)  # [B, 2**k, 2**k]
+    return torch.einsum("bri,brj->bij", psi_on_wires, psi_on_wires.conj())  # [B, 2**k, 2**k]
 
 
 def measure_observables(
