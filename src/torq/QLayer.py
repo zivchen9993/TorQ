@@ -37,9 +37,10 @@ class QLayer(nn.Module):
         self.ansatz = make_ansatz(ansatz_name, n_qubits, n_layers, device=None)
         self.param_init(weights, weights_last_layer_data_re, param_init_dict, q_layer_idx)
 
-        # sigma_Z observable like you had
-
-        self.observable = self.set_observable_for_measurement()  # observables other than Pauli-Z can be used, but with slower performance
+        # measurement setup
+        self.observable = None
+        self.measurement_observables = None
+        self.set_observable_for_measurement()
         self._optional_backend = maybe_create_pennylane_backend(self)
 
     def forward(self, x):
@@ -101,6 +102,12 @@ class QLayer(nn.Module):
                 U = self.ansatz.layer_op(layer_idx=d_reup, weights=w)  # [2**n, 2**n]
                 state = tq.apply_matrix(state, U)
 
+        if self.measurement_observables is not None:
+            return tq.measure_observables(
+                state,
+                self.measurement_observables,
+                pauli_chunk_size=getattr(self.config, "pauli_measurement_chunk_size", 8),
+            )
         return tq.measure(state, self.observable)
 
     def param_init(self, weights=None, weights_last_layer_data_re=None, param_init_dict=None, layer_idx=0):
@@ -190,6 +197,16 @@ class QLayer(nn.Module):
                 self.params_last_layer_reupload = nn.Parameter(parameters_reupload)
 
     def set_observable_for_measurement(self) -> None:
+        measurement_observables = getattr(self.config, "measurement_observables", None)
+        if measurement_observables is not None:
+            self.measurement_observables = tq.compile_measurement_observables(
+                measurement_observables,
+                n_qubits=self.n_qubits,
+                x=self.params,
+            )
+            self.observable = None
+            return
+
         observable_name = getattr(self.config, "local_observable_name", "Z")
         obs_name_lower = observable_name.lower()
         custom_obs = getattr(self.config, "custom_local_observable", None)
@@ -206,7 +223,7 @@ class QLayer(nn.Module):
                 observable = tq.local_obs_like(custom_obs, x=self.params)
             case _:
                 raise ValueError(f"Unsupported observable name: {observable_name!r}. Supported: 'Z', 'X', 'Y', local 2x2 observable.")
-        return observable
+        self.observable = observable
 # class QLayer(nn.Module):
 #     def __init__(self, n_qubits=3, n_layers=1, ansatz_name="basic_entangling", config=None,
 #                  basis_angle_embedding='X'):

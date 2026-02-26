@@ -2,7 +2,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from torq.Measure import measure
+from torq.Measure import compile_measurement_observables, measure, measure_observables
 from torq.SingleQubitGates import sigma_X_like, sigma_Z_like
 
 
@@ -43,3 +43,32 @@ def test_measure_rejects_bad_observable_shape():
     state[:, 0] = 1.0
     with pytest.raises(ValueError, match="local_observable"):
         measure(state, torch.ones(2, 2, 2, 2))
+
+
+@pytest.mark.full
+def test_measure_observables_supports_local_and_nonlocal_pauli_terms():
+    state = torch.zeros(1, 4, dtype=torch.complex64)
+    state[:, 0] = 1.0  # |00>
+    observables = [
+        {"wires": [0], "pauli": "Z"},
+        {"wires": [0, 1], "pauli": "ZZ"},
+        {"wires": [1], "pauli": "X"},
+    ]
+    out = measure_observables(state, observables)
+    expected = torch.tensor([[1.0, 1.0, 0.0]])
+    assert torch.allclose(out, expected, atol=1e-7, rtol=1e-7)
+
+
+@pytest.mark.full
+def test_measure_observables_supports_compiled_specs_and_matrix_observables():
+    state = torch.zeros(1, 4, dtype=torch.complex64)
+    state[:, 0] = 1.0  # |00>
+    sigma_z = sigma_Z_like(x=state)
+    observables = [
+        {"wires": [0, 1], "matrix": torch.kron(sigma_z, sigma_z)},
+        {"wires": [0], "pauli": "X"},
+    ]
+    compiled = compile_measurement_observables(observables, n_qubits=2, x=state)
+    out = measure_observables(state, compiled)
+    expected = torch.tensor([[1.0, 0.0]])
+    assert torch.allclose(out, expected, atol=1e-7, rtol=1e-7)

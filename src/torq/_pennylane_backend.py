@@ -30,6 +30,20 @@ class _PennyLaneRunner:
 def maybe_create_pennylane_backend(layer):
     if not getattr(layer.config, "pennylane_backend", False):
         return None
+    if getattr(layer.config, "measurement_observables", None) is not None:
+        warnings.warn(
+            "pennylane_backend=True but measurement_observables are not supported by the PennyLane backend; "
+            "using TorQ backend.",
+            RuntimeWarning,
+        )
+        return None
+    observable_name = getattr(layer.config, "local_observable_name", "Z")
+    if observable_name.lower() not in {"z", "pauliz", "pauli_z", "sigmaz", "sigma_z"}:
+        warnings.warn(
+            "pennylane_backend=True but local_observable_name is not Pauli-Z; using TorQ backend.",
+            RuntimeWarning,
+        )
+        return None
     if not _pennylane_dependencies_available():
         warnings.warn(
             "pennylane_backend=True but torq_bench and/or pennylane is not installed; "

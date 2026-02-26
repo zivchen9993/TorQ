@@ -146,3 +146,26 @@ def test_strongly_entangling_data_reupload_guard_allows_boundary():
     y = circuit(torch.rand(2, 3))
     assert y.shape == (2, 3)
     assert torch.isfinite(y).all()
+
+
+@pytest.mark.full
+def test_measurement_observables_drive_output_size():
+    n_qubits = 4
+    observables = []
+    for i in range(n_qubits):
+        observables.append({"wires": [i], "pauli": "Z"})
+    for j in range(n_qubits - 1):
+        observables.append({"wires": [j, j + 1], "pauli": "ZZ"})
+    for i in range(n_qubits):
+        observables.append({"wires": [i], "pauli": "X"})
+
+    circuit = Circuit(
+        n_qubits=n_qubits,
+        n_layers=2,
+        ansatz_name="basic_entangling",
+        config=CircuitConfig(measurement_observables=observables),
+    )
+    x = torch.rand(3, n_qubits)
+    y = circuit(x)
+    assert y.shape == (3, len(observables))
+    assert torch.isfinite(y).all()

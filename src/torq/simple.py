@@ -21,7 +21,7 @@ from .Templates import (
     data_reuploading_gates,
     get_initial_state,
 )
-from .Measure import measure
+from .Measure import measure, measure_observables
 from .SingleQubitGates import sigma_Z_like
 
 
@@ -43,6 +43,8 @@ class CircuitConfig:
     pennylane_dev_name: str | None = None
     local_observable_name: str = "Z"
     custom_local_observable: torch.Tensor | None = None
+    measurement_observables: list[dict] | tuple[dict, ...] | None = None
+    pauli_measurement_chunk_size: int = 8
 
     def __post_init__(self) -> None:
         if self.data_reupload_every < 0:
@@ -91,6 +93,13 @@ class CircuitConfig:
             raise ValueError(
                 "custom_local_observable must be provided when local_observable_name is custom."
             )
+        if self.measurement_observables is not None:
+            if not isinstance(self.measurement_observables, (list, tuple)):
+                raise TypeError("measurement_observables must be a list/tuple of observable specs.")
+            if len(self.measurement_observables) == 0:
+                raise ValueError("measurement_observables cannot be empty.")
+        if self.pauli_measurement_chunk_size < 1:
+            raise ValueError("pauli_measurement_chunk_size must be >= 1.")
 
 
 class Circuit(nn.Module):
@@ -138,5 +147,6 @@ __all__ = [
     "data_reuploading_gates",
     "get_initial_state",
     "measure",
+    "measure_observables",
     "sigma_Z_like",
 ]
