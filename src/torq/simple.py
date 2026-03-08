@@ -21,7 +21,7 @@ from .Templates import (
     data_reuploading_gates,
     get_initial_state,
 )
-from .Measure import measure, measure_observables
+from .Measure import measure
 from .SingleQubitGates import sigma_Z_like
 
 
@@ -41,9 +41,7 @@ class CircuitConfig:
     noise_all_q_layers: bool = False
     pennylane_backend: bool = False
     pennylane_dev_name: str | None = None
-    local_observable_name: str = "Z"
-    custom_local_observable: torch.Tensor | None = None
-    measurement_observables: list[dict] | tuple[dict, ...] | None = None
+    observables: object = None
     pauli_measurement_chunk_size: int = 8
 
     def __post_init__(self) -> None:
@@ -77,27 +75,9 @@ class CircuitConfig:
                 )
             self.angle_scaling_method = legacy_methods[0]
 
-        obs_name = self.local_observable_name.lower()
-        allowed_names = {
-            "z", "pauliz", "pauli_z", "sigmaz", "sigma_z",
-            "x", "paulix", "pauli_x", "sigmax", "sigma_x",
-            "y", "pauliy", "pauli_y", "sigmay", "sigma_y",
-            "custom", "custom_hermitian", "local",
-        }
-        if obs_name not in allowed_names:
-            raise ValueError(
-                f"local_observable_name must be one of {sorted(allowed_names)}. "
-                f"Got: {self.local_observable_name!r}"
-            )
-        if obs_name in {"custom", "custom_hermitian", "local"} and self.custom_local_observable is None:
-            raise ValueError(
-                "custom_local_observable must be provided when local_observable_name is custom."
-            )
-        if self.measurement_observables is not None:
-            if not isinstance(self.measurement_observables, (list, tuple)):
-                raise TypeError("measurement_observables must be a list/tuple of observable specs.")
-            if len(self.measurement_observables) == 0:
-                raise ValueError("measurement_observables cannot be empty.")
+        if self.observables is not None:
+            if isinstance(self.observables, (list, tuple)) and len(self.observables) == 0:
+                raise ValueError("observables cannot be an empty list/tuple.")
         if self.pauli_measurement_chunk_size < 1:
             raise ValueError("pauli_measurement_chunk_size must be >= 1.")
 
@@ -147,6 +127,5 @@ __all__ = [
     "data_reuploading_gates",
     "get_initial_state",
     "measure",
-    "measure_observables",
     "sigma_Z_like",
 ]

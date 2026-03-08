@@ -38,8 +38,6 @@ from .Ops import (
 # Measure
 from .Measure import (
     measure,
-    measure_observables,
-    compile_measurement_observables,
     measure_local_observable,
     measure_local_Z,
     local_obs_like,
@@ -66,7 +64,7 @@ __all__ = [
     "angle_embedding", "cross_mesh_single_layer", "basic_or_strongly_single_layer",
     "global_entanglement_calc", "get_initial_state",
     "apply_matrix", "multi_dim_tensor_product", "multi_dim_matmul_reversed", "kron_with_replace",
-    "measure", "measure_observables", "compile_measurement_observables", "measure_local_observable", "measure_local_Z",
+    "measure", "measure_local_observable", "measure_local_Z",
     "get_rx", "get_ry", "get_rz", "get_rot_gate",
     "ID1_like", "sigma_X_like", "sigma_Y_like", "sigma_Z_like", "local_obs_like",
     "ketbra00_like", "ketbra01_like", "ketbra10_like", "ketbra11_like",

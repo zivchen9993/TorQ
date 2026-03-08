@@ -5,6 +5,19 @@ torch = pytest.importorskip("torch")
 from torq.simple import Circuit, CircuitConfig
 
 
+def _full_pauli_matrix(word: str) -> torch.Tensor:
+    mats = {
+        "I": torch.eye(2, dtype=torch.float32),
+        "X": torch.tensor([[0.0, 1.0], [1.0, 0.0]], dtype=torch.float32),
+        "Y": torch.tensor([[0.0, -1.0j], [1.0j, 0.0]], dtype=torch.complex64),
+        "Z": torch.tensor([[1.0, 0.0], [0.0, -1.0]], dtype=torch.float32),
+    }
+    out = mats[word[0]]
+    for char in word[1:]:
+        out = torch.kron(out, mats[char].to(dtype=out.dtype))
+    return out
+
+
 @pytest.mark.full
 def test_legacy_angle_aliases_map_to_scaling_method():
     assert CircuitConfig(angle_asin=True).angle_scaling_method == "asin"
@@ -149,23 +162,114 @@ def test_strongly_entangling_data_reupload_guard_allows_boundary():
 
 
 @pytest.mark.full
-def test_measurement_observables_drive_output_size():
+def test_observables_drive_output_size():
     n_qubits = 4
-    observables = []
-    for i in range(n_qubits):
-        observables.append({"wires": [i], "pauli": "Z"})
-    for j in range(n_qubits - 1):
-        observables.append({"wires": [j, j + 1], "pauli": "ZZ"})
-    for i in range(n_qubits):
-        observables.append({"wires": [i], "pauli": "X"})
-
     circuit = Circuit(
         n_qubits=n_qubits,
         n_layers=2,
         ansatz_name="basic_entangling",
-        config=CircuitConfig(measurement_observables=observables),
+        config=CircuitConfig(observables="z_zz_x"),
     )
     x = torch.rand(3, n_qubits)
     y = circuit(x)
-    assert y.shape == (3, len(observables))
+    assert y.shape == (3, 11)
     assert torch.isfinite(y).all()
+
+
+@pytest.mark.full
+def test_observables_single_pauli_string_is_case_insensitive():
+    x = torch.rand(3, 3)
+    circuit_default = Circuit(
+        n_qubits=3,
+        n_layers=1,
+        ansatz_name="basic_entangling",
+        config=CircuitConfig(observables=None),
+    )
+    circuit_z = Circuit(
+        n_qubits=3,
+        n_layers=1,
+        ansatz_name="basic_entangling",
+        config=CircuitConfig(observables="z"),
+        weights=circuit_default.params.detach().clone(),
+    )
+    out_default = circuit_default(x)
+    out_z = circuit_z(x)
+    assert out_z.shape == (3, 3)
+    assert torch.allclose(out_default, out_z, atol=1e-7, rtol=1e-7)
+
+
+@pytest.mark.full
+def test_observables_grouped_pauli_string_matches_explicit_observable_list():
+    x = torch.rand(3, 4)
+    explicit_matrices = []
+    for i in range(4):
+        pauli = ["I"] * 4
+        pauli[i] = "Z"
+        explicit_matrices.append(_full_pauli_matrix("".join(pauli)))
+    for i in range(3):
+        pauli = ["I"] * 4
+        pauli[i] = "Z"
+        pauli[i + 1] = "Z"
+        explicit_matrices.append(_full_pauli_matrix("".join(pauli)))
+    for i in range(4):
+        pauli = ["I"] * 4
+        pauli[i] = "X"
+        explicit_matrices.append(_full_pauli_matrix("".join(pauli)))
+
+    grouped_circuit = Circuit(
+        n_qubits=4,
+        n_layers=1,
+        ansatz_name="basic_entangling",
+        config=CircuitConfig(observables="z_zz_x"),
+    )
+    explicit_circuit = Circuit(
+        n_qubits=4,
+        n_layers=1,
+        ansatz_name="basic_entangling",
+        config=CircuitConfig(observables=torch.stack(explicit_matrices, dim=0)),
+        weights=grouped_circuit.params.detach().clone(),
+    )
+    y_grouped = grouped_circuit(x)
+    y_explicit = explicit_circuit(x)
+    assert y_grouped.shape == (3, len(explicit_matrices))
+    assert torch.allclose(y_grouped, y_explicit, atol=1e-7, rtol=1e-7)
+
+
+@pytest.mark.full
+def test_observables_reject_all_identity_pauli_string():
+    with pytest.raises(ValueError, match="all identity"):
+        Circuit(
+            n_qubits=3,
+            n_layers=1,
+            ansatz_name="basic_entangling",
+            config=CircuitConfig(observables="i_i_i"),
+        )
+
+
+@pytest.mark.full
+def test_observables_support_global_matrix_and_matrices():
+    n_qubits = 3
+    z_diag = torch.diag(torch.tensor([1.0, -1.0], dtype=torch.float32))
+    global_z0 = torch.kron(torch.kron(z_diag, torch.eye(2)), torch.eye(2))
+    stacked = torch.stack([global_z0, global_z0], dim=0)
+
+    circuit_single = Circuit(
+        n_qubits=n_qubits,
+        n_layers=1,
+        ansatz_name="basic_entangling",
+        config=CircuitConfig(observables=global_z0),
+    )
+    circuit_many = Circuit(
+        n_qubits=n_qubits,
+        n_layers=1,
+        ansatz_name="basic_entangling",
+        config=CircuitConfig(observables=stacked),
+        weights=circuit_single.params.detach().clone(),
+    )
+    x = torch.rand(2, n_qubits)
+    y_single = circuit_single(x)
+    y_many = circuit_many(x)
+    assert y_single.shape == (2, 1)
+    assert y_many.shape == (2, 2)
+    assert torch.allclose(y_many[:, 0], y_single[:, 0], atol=1e-6, rtol=1e-6)
+    assert torch.allclose(y_many[:, 1], y_single[:, 0], atol=1e-6, rtol=1e-6)

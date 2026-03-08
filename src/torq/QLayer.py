@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torq as tq
-import string
+import warnings
 from .Ansatz import make_ansatz
 from ._pennylane_backend import maybe_create_pennylane_backend
 
@@ -38,9 +38,9 @@ class QLayer(nn.Module):
         self.param_init(weights, weights_last_layer_data_re, param_init_dict, q_layer_idx)
 
         # measurement setup
-        self.observable = None
-        self.measurement_observables = None
-        self.set_observable_for_measurement()
+        # self.observables = None
+        # self.set_observable_for_measurement()
+        self.observables = getattr(self.config, "observables", None)
         self._optional_backend = maybe_create_pennylane_backend(self)
 
     def forward(self, x):
@@ -102,13 +102,11 @@ class QLayer(nn.Module):
                 U = self.ansatz.layer_op(layer_idx=d_reup, weights=w)  # [2**n, 2**n]
                 state = tq.apply_matrix(state, U)
 
-        if self.measurement_observables is not None:
-            return tq.measure_observables(
-                state,
-                self.measurement_observables,
-                pauli_chunk_size=getattr(self.config, "pauli_measurement_chunk_size", 8),
-            )
-        return tq.measure(state, self.observable)
+        return tq.measure(
+            state,
+            self.observables,
+            pauli_chunk_size=getattr(self.config, "pauli_measurement_chunk_size", 8),
+        )
 
     def param_init(self, weights=None, weights_last_layer_data_re=None, param_init_dict=None, layer_idx=0):
         # Resolve per-layer parameter shape from the selected ansatz.
@@ -196,72 +194,59 @@ class QLayer(nn.Module):
             if self.data_reupload_every:
                 self.params_last_layer_reupload = nn.Parameter(parameters_reupload)
 
-    def set_observable_for_measurement(self) -> None:
-        measurement_observables = getattr(self.config, "measurement_observables", None)
-        if measurement_observables is not None:
-            self.measurement_observables = tq.compile_measurement_observables(
-                measurement_observables,
-                n_qubits=self.n_qubits,
-                x=self.params,
-            )
-            self.observable = None
-            return
-
-        observable_name = getattr(self.config, "local_observable_name", "Z")
-        obs_name_lower = observable_name.lower()
-        custom_obs = getattr(self.config, "custom_local_observable", None)
-        match obs_name_lower:
-            case "z" | "pauliz" | "pauli_z" | "sigmaz" | "sigma_z":  # keeps dtype/device consistent via likeable.
-                observable = tq.sigma_Z_like(x=self.params)
-            case "x" | "paulix" | "pauli_x" | "sigmax" | "sigma_x":
-                observable = tq.sigma_X_like(x=self.params)
-            case "y" | "pauliy" | "pauli_y" | "sigmay" | "sigma_y":
-                observable = tq.sigma_Y_like(x=self.params)
-            case "custom" | "custom_hermitian" | "local":
-                if custom_obs is None:
-                    raise ValueError("local_observable_name indicates a custom observable, but custom_local_observable is not set in the config.")
-                observable = tq.local_obs_like(custom_obs, x=self.params)
-            case _:
-                raise ValueError(f"Unsupported observable name: {observable_name!r}. Supported: 'Z', 'X', 'Y', local 2x2 observable.")
-        self.observable = observable
-# class QLayer(nn.Module):
-#     def __init__(self, n_qubits=3, n_layers=1, ansatz_name="basic_entangling", config=None,
-#                  basis_angle_embedding='X'):
-#         super().__init__()
-#         self.n_qubits = n_qubits
-#         self.n_layers = n_layers
-#         self.config = config
-#         self.ansatz_name = ansatz_name
-#         self.basis_angle_embedding = basis_angle_embedding
-#
-#         self.angle_scaling_method = getattr(self.config, 'angle_scaling_method', 'none')
-#         self.angle_scaling = getattr(self.config, 'angle_scaling', 1.0)
-#
-#         # === ansatz selection + parameter tensor shape ===
-#         # build ansatz object (holds any precomputes)
-#         # NOTE: device of params is not known yet; we’ll move precomputes lazily on first forward if needed
-#         self.ansatz = make_ansatz(ansatz_name, n_qubits, n_layers, device=None)
-#
-#         # sigma_Z observable
-#         self.observable = tq.sigma_Z_like(x=self.params)  # keeps dtype/device consistent via likeable
-#         self._optional_backend = maybe_create_pennylane_backend(self)  # for benchmarking and testing against pennylane; if it is None, the regular forward will be used. for benchmarking, the TorQ-bench library should be used.
-#
-#     def forward(self, x):
-#         if not torch.isfinite(self.params).all():
-#             raise ValueError(f"QLayer.params has NaN: {self.params}")
-#         if self._optional_backend is not None:
-#             return self._optional_backend.forward(x)
-#         state = tq.angle_embedding(
-#             x,
-#             angle_scaling_method=self.angle_scaling_method,
-#             angle_scaling=self.angle_scaling,
-#             basis=self.basis_angle_embedding,
-#         ).squeeze(-1)  # [B,2**n]
-#
-#         angles_reparametrize = None
-#         if self.reparametrize_sin_cos:
-#             angles_reparametrize = torch.atan2(torch.sin(self.params), torch.cos(self.params))
-#
+    # def set_observable_for_measurement(self) -> None:
+    #     observables = getattr(self.config, "observables", None)
+    #
+    #     # # Backward compatibility with legacy measurement config fields.
+    #     # if observables is None:
+    #     #     legacy_multi = getattr(self.config, "measurement_observables", None)
+    #     #     legacy_local_name = getattr(self.config, "local_observable_name", None)
+    #     #     legacy_custom = getattr(self.config, "custom_local_observable", None)
+    #     #     if legacy_multi is not None:
+    #     #         warnings.warn(
+    #     #             "measurement_observables is deprecated; use observables instead.",
+    #     #             DeprecationWarning,
+    #     #             stacklevel=2,
+    #     #         )
+    #     #         observables = legacy_multi
+    #     #     elif legacy_local_name is not None:
+    #     #         warnings.warn(
+    #     #             "local_observable_name/custom_local_observable are deprecated; use observables instead.",
+    #     #             DeprecationWarning,
+    #     #             stacklevel=2,
+    #     #         )
+    #     #         local_name = str(legacy_local_name).lower()
+    #     #         if local_name in {"z", "pauliz", "pauli_z", "sigmaz", "sigma_z"}:
+    #     #             observables = "Z"
+    #     #         elif local_name in {"x", "paulix", "pauli_x", "sigmax", "sigma_x"}:
+    #     #             observables = "X"
+    #     #         elif local_name in {"y", "pauliy", "pauli_y", "sigmay", "sigma_y"}:
+    #     #             observables = "Y"
+    #     #         elif local_name in {"custom", "custom_hermitian", "local"}:
+    #     #             observables = legacy_custom
+    #     #         else:
+    #     #             raise ValueError(f"Unsupported legacy local_observable_name: {legacy_local_name!r}.")
+    #
+    #     if isinstance(observables, str):
+    #         cleaned = observables.upper().replace(" ", "")
+    #         if not cleaned:
+    #             raise ValueError("Pauli-string observable cannot be empty.")
+    #         if cleaned.startswith("_") or cleaned.endswith("_") or "__" in cleaned:
+    #             raise ValueError("Pauli-string observable cannot contain empty '_' groups.")
+    #         bad = sorted(set(ch for ch in cleaned if ch not in {"I", "X", "Y", "Z", "_"}))
+    #         if bad:
+    #             raise ValueError(f"Unsupported Pauli characters {bad}. Supported characters: I, X, Y, Z, _.")
+    #         if all(ch == "I" for ch in cleaned if ch != "_"):
+    #             raise ValueError("Pauli-string observable cannot be all identity ('I').")
+    #         for pauli_word in cleaned.split("_"):
+    #             if len(pauli_word) > self.n_qubits:
+    #                 raise ValueError(
+    #                     f"Pauli-string observables must have length <= n_qubits={self.n_qubits}. "
+    #                     f"Got length={len(pauli_word)}."
+    #                 )
+    #         observables = cleaned
+    #
+    #     self.observables = observables
 #         for layer in range(self.n_layers):
 #             if self.reparametrize_sin_cos:
 #                 w = angles_reparametrize[layer]

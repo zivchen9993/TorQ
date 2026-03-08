@@ -1,12 +1,11 @@
 import math
 import string
-from collections import defaultdict
 from typing import Any, Sequence
 
 import torch
 
 from .Dtypes import complex_dtype_like
-from .SingleQubitGates import sigma_Z_like
+from .SingleQubitGates import sigma_X_like, sigma_Y_like, sigma_Z_like
 from ._like import likeable
 
 
@@ -21,7 +20,6 @@ def local_obs_like(obs, *, dtype, device):
     if not torch.allclose(obs, obs.conj().mT, atol=1e-8, rtol=1e-5):
         raise ValueError("local observables must be Hermitian, but the provided observable is not conjugate-transpose of itself")
     return obs.to(dtype=dtype, device=device)
-
 
 def _state_to_2d(state: torch.Tensor) -> torch.Tensor:
     if state.dim() == 3 and state.shape[-1] == 1:
@@ -139,172 +137,227 @@ def measure_local_Z(state: torch.Tensor) -> torch.Tensor:
     return torch.einsum(eq, probs, Z_axes)
 
 
-def _normalize_wires(wires: Any, n_qubits: int, obs_idx: int) -> tuple[int, ...]:
-    if isinstance(wires, int):
-        wires = (wires,)
-    elif isinstance(wires, Sequence):
-        wires = tuple(wires)
-    else:
-        raise TypeError(f"Observable #{obs_idx}: 'wires' must be an int or a sequence of ints.")
-
-    if not wires:
-        raise ValueError(f"Observable #{obs_idx}: 'wires' cannot be empty.")
-
-    normalized: list[int] = []
-    for wire in wires:
-        if not isinstance(wire, int):
-            raise TypeError(f"Observable #{obs_idx}: all wires must be ints. Got {wire!r}.")
-        if wire < 0 or wire >= n_qubits:
-            raise ValueError(
-                f"Observable #{obs_idx}: wire index {wire} is out of range for n_qubits={n_qubits}."
-            )
-        normalized.append(wire)
-
-    if len(set(normalized)) != len(normalized):
-        raise ValueError(f"Observable #{obs_idx}: wires must be unique. Got {normalized}.")
-    return tuple(normalized)
-
-
-def _normalize_pauli_ops(pauli: Any, n_wires: int, obs_idx: int) -> tuple[str, ...]:
-    if isinstance(pauli, str):
-        cleaned = pauli.replace(" ", "").upper()
-        if len(cleaned) == 1:
-            ops = [cleaned] * n_wires
-        elif len(cleaned) == n_wires:
-            ops = list(cleaned)
-        else:
-            raise ValueError(
-                f"Observable #{obs_idx}: pauli string length must be 1 or {n_wires}. "
-                f"Got {len(cleaned)}."
-            )
-    elif isinstance(pauli, Sequence):
-        ops = [str(op).upper() for op in pauli]
-        if len(ops) != n_wires:
-            raise ValueError(
-                f"Observable #{obs_idx}: pauli sequence length must match wires length ({n_wires}). "
-                f"Got {len(ops)}."
-            )
-        if any(len(op) != 1 for op in ops):
-            raise ValueError(f"Observable #{obs_idx}: each pauli entry must be a single character in I/X/Y/Z.")
-    else:
-        raise TypeError(f"Observable #{obs_idx}: 'pauli' must be a string or a sequence of strings.")
-
-    allowed = {"I", "X", "Y", "Z"}
-    bad = [op for op in ops if op not in allowed]
+def _canonicalize_pauli_string(pauli: str) -> str:
+    cleaned = pauli.upper().replace(" ", "")
+    if not cleaned:
+        raise ValueError("Pauli-string observable cannot be empty.")
+    if cleaned.startswith("_") or cleaned.endswith("_") or "__" in cleaned:
+        raise ValueError("Pauli-string observable cannot contain empty '_' groups.")
+    bad = sorted(set(ch for ch in cleaned if ch not in {"I", "X", "Y", "Z", "_"}))
     if bad:
-        raise ValueError(
-            f"Observable #{obs_idx}: unsupported Pauli ops {bad}. Supported ops are I, X, Y, Z."
-        )
-    return tuple(ops)
+        raise ValueError(f"Unsupported Pauli characters {bad}. Supported characters: I, X, Y, Z, _.")
+    return cleaned
+
+def _split_pauli_groups(pauli: str) -> tuple[str, ...]:
+    groups = tuple(pauli.split("_"))
+    if any(not group for group in groups):
+        raise ValueError("Pauli-string observable cannot contain empty '_' groups.")
+    return groups
 
 
-def _normalize_real_coeff(coeff: Any, dtype: torch.dtype, device: torch.device, obs_idx: int) -> torch.Tensor:
-    coeff_t = torch.as_tensor(coeff, device=device)
-    if coeff_t.numel() != 1:
-        raise ValueError(f"Observable #{obs_idx}: 'coeff' must be a scalar.")
-    coeff_t = coeff_t.reshape(())
-    if torch.is_complex(coeff_t):
-        imag = coeff_t.imag.abs().item()
-        if imag > 1e-8:
-            raise ValueError(f"Observable #{obs_idx}: 'coeff' must be real to keep the observable Hermitian.")
-        coeff_t = coeff_t.real
-    return coeff_t.to(dtype=dtype, device=device)
+def _pauli_spec_is_all_identity(pauli: str) -> bool:
+    chars = [ch for ch in pauli if ch != "_"]
+    return bool(chars) and all(ch == "I" for ch in chars)
 
 
-def _compile_measurement_observable(
-    spec: dict[str, Any],
+def _compile_pauli_word_on_qubits(
+    pauli_word: str,
+    qubits: Sequence[int],
+    *,
     n_qubits: int,
     dtype: torch.dtype,
     device: torch.device,
     obs_idx: int,
 ) -> dict[str, Any]:
-    if not isinstance(spec, dict):
-        raise TypeError(f"Observable #{obs_idx}: each observable must be a dict.")
-    if "wires" not in spec:
-        raise ValueError(f"Observable #{obs_idx}: missing required key 'wires'.")
-
-    wires = _normalize_wires(spec["wires"], n_qubits=n_qubits, obs_idx=obs_idx)
-    has_pauli = spec.get("pauli") is not None
-    has_matrix = spec.get("matrix") is not None
-    if has_pauli == has_matrix:
+    if len(pauli_word) != len(qubits):
         raise ValueError(
-            f"Observable #{obs_idx}: specify exactly one of 'pauli' or 'matrix'."
+            f"Observable #{obs_idx}: Pauli word length must match the number of qubits. "
+            f"Got {len(pauli_word)} and {len(qubits)}."
         )
 
-    coeff = _normalize_real_coeff(spec.get("coeff", 1.0), dtype=dtype, device=device, obs_idx=obs_idx)
+    flip_mask = 0
+    yz_mask = 0
+    n_y = 0
+    for qubit, op in zip(qubits, pauli_word):
+        if op not in {"I", "X", "Y", "Z"}:
+            raise ValueError(
+                f"Observable #{obs_idx}: unsupported Pauli operator {op!r}. "
+                "Supported operators are I, X, Y, Z."
+            )
+        bit = 1 << (n_qubits - 1 - qubit)
+        if op in {"X", "Y"}:
+            flip_mask |= bit
+        if op in {"Y", "Z"}:
+            yz_mask |= bit
+        if op == "Y":
+            n_y += 1
 
-    if has_pauli:
-        pauli_ops = _normalize_pauli_ops(spec["pauli"], n_wires=len(wires), obs_idx=obs_idx)
-        flip_mask = 0
-        yz_mask = 0
-        n_y = 0
-        for wire, op in zip(wires, pauli_ops):
-            bit = 1 << (n_qubits - 1 - wire)
-            if op in {"X", "Y"}:
-                flip_mask |= bit
-            if op in {"Y", "Z"}:
-                yz_mask |= bit
-            if op == "Y":
-                n_y += 1
-        # In this transformed-ket convention, each Y contributes a factor of -i.
-        phase = coeff * ((-1j) ** n_y)
-        return {
-            "kind": "pauli",
-            "n_qubits": n_qubits,
-            "wires": wires,
-            "flip_mask": int(flip_mask),
-            "yz_mask": int(yz_mask),
-            "phase": torch.as_tensor(phase, dtype=dtype, device=device),
-        }
-
-    matrix = torch.as_tensor(spec["matrix"]).to(dtype=dtype, device=device)
-    local_dim = 1 << len(wires)
-    expected_shape = (local_dim, local_dim)
-    if tuple(matrix.shape) != expected_shape:
-        raise ValueError(
-            f"Observable #{obs_idx}: matrix must have shape {expected_shape} for wires={wires}. "
-            f"Got {tuple(matrix.shape)}."
-        )
-    if not torch.allclose(matrix, matrix.conj().mT, atol=1e-8, rtol=1e-5):
-        raise ValueError(f"Observable #{obs_idx}: matrix observable must be Hermitian.")
     return {
-        "kind": "matrix",
+        "kind": "pauli",
         "n_qubits": n_qubits,
-        "wires": wires,
-        "matrix": matrix * coeff,
+        "qubits": tuple(qubits),
+        "pauli_ops": tuple(pauli_word),
+        "flip_mask": int(flip_mask),
+        "yz_mask": int(yz_mask),
+        "phase": torch.as_tensor(((-1j) ** n_y), dtype=dtype, device=device),
     }
 
 
-@likeable
-def compile_measurement_observables(
-    observables: Sequence[dict[str, Any]],
-    n_qubits: int,
+def _compile_sliding_pauli_word(  # TODO: can and should it be implemented using einsum instead of a python loop? can be made into layers of measurements, where each layer applies the most amount of observables in parallel, and the number of layers is the max number of observables that overlap on any qubit.
+    pauli_word: str,
     *,
+    n_qubits: int,
     dtype: torch.dtype,
     device: torch.device,
+    obs_idx_offset: int = 0,
 ) -> tuple[dict[str, Any], ...]:
-    if not isinstance(observables, Sequence) or isinstance(observables, (str, bytes)):
-        raise TypeError("measurement observables must be provided as a sequence of dict specs.")
-    if len(observables) == 0:
-        raise ValueError("measurement observables cannot be empty.")
-    return tuple(
-        _compile_measurement_observable(
-            spec=spec,
-            n_qubits=n_qubits,
-            dtype=dtype,
-            device=device,
-            obs_idx=obs_idx,
+    if len(pauli_word) > n_qubits:
+        raise ValueError(
+            f"Pauli-string observables must have length <= n_qubits={n_qubits}. "
+            f"Got length={len(pauli_word)}."
         )
-        for obs_idx, spec in enumerate(observables)
+
+    compiled = []
+    for start in range(n_qubits - len(pauli_word) + 1):
+        compiled.append(
+            _compile_pauli_word_on_qubits(
+                pauli_word,
+                qubits=tuple(range(start, start + len(pauli_word))),
+                n_qubits=n_qubits,
+                dtype=dtype,
+                device=device,
+                obs_idx=obs_idx_offset + len(compiled),
+            )
+        )
+    return tuple(compiled)
+
+
+def _is_matrix_like(value: Any) -> bool:
+    if torch.is_tensor(value):
+        return value.dim() >= 2
+    try:
+        t = torch.as_tensor(value)
+    except Exception:
+        return False
+    return t.dim() >= 2
+
+
+def _as_tensor_observable(value: Any, *, dtype: torch.dtype, device: torch.device) -> torch.Tensor:
+    return torch.as_tensor(value).to(dtype=dtype, device=device)
+
+
+def _measure_single_pauli_word(
+    state_2d: torch.Tensor,
+    pauli_word: str,
+    *,
+    pauli_chunk_size: int,
+) -> torch.Tensor:
+    n_qubits = _infer_n_qubits_from_state(state_2d)
+    word = pauli_word.upper()
+
+    if len(word) == 1:
+        match word:
+            case "Z":
+                return measure_local_Z(state_2d)
+            case "X":
+                return measure_local_observable(
+                    state_2d,
+                    sigma_X_like(dtype=complex_dtype_like(state_2d), device=state_2d.device),
+                )
+            case "Y":
+                return measure_local_observable(
+                    state_2d,
+                    sigma_Y_like(dtype=complex_dtype_like(state_2d), device=state_2d.device),
+                )
+            case "I":
+                return state_2d.real.new_ones((state_2d.shape[0], n_qubits))
+
+    compiled = _compile_sliding_pauli_word(
+        word,
+        n_qubits=n_qubits,
+        dtype=complex_dtype_like(state_2d),
+        device=state_2d.device,
+    )
+    out = _measure_compiled_pauli_observables(
+        state_2d=state_2d,
+        pauli_specs=compiled,
+        n_qubits=n_qubits,
+        pauli_chunk_size=pauli_chunk_size,
+    )
+    return out.real if torch.is_complex(out) else out
+
+
+def _measure_from_pauli_string(
+    state_2d: torch.Tensor,
+    observable: str,
+    *,
+    pauli_chunk_size: int,
+) -> torch.Tensor:
+    pauli = _canonicalize_pauli_string(observable)
+    if _pauli_spec_is_all_identity(pauli):
+        raise ValueError("Pauli-string observable cannot be all identity ('I').")
+
+    outputs = [
+        _measure_single_pauli_word(
+            state_2d,
+            pauli_word,
+            pauli_chunk_size=pauli_chunk_size,
+        )
+        for pauli_word in _split_pauli_groups(pauli)
+    ]
+    return torch.cat(outputs, dim=1)
+
+
+def _validate_hermitian_matrix(matrix: torch.Tensor, *, description: str) -> None:
+    if not torch.allclose(matrix, matrix.conj().transpose(-2, -1), atol=1e-8, rtol=1e-5):
+        raise ValueError(f"{description} must be Hermitian.")
+
+
+def _measure_from_matrix(
+    state_2d: torch.Tensor,
+    observable: Any,
+) -> torch.Tensor:
+    n_qubits = _infer_n_qubits_from_state(state_2d)
+    full_dim = 2 ** n_qubits
+    state_complex = state_2d.to(dtype=complex_dtype_like(state_2d))
+    obs = _as_tensor_observable(
+        observable,
+        dtype=state_complex.dtype,
+        device=state_2d.device,
     )
 
+    if obs.dim() == 2:
+        if tuple(obs.shape) == (2, 2):
+            _validate_hermitian_matrix(obs, description="Local observable")
+            if _is_pauli_z_observable(obs, n_qubits, state_complex.dtype, state_2d.device):
+                return measure_local_Z(state_2d)
+            return measure_local_observable(state_2d, obs)
+        if tuple(obs.shape) == (full_dim, full_dim):
+            _validate_hermitian_matrix(obs, description="Global matrix observable")
+            vals = torch.einsum("bi,ij,bj->b", state_complex.conj(), obs, state_complex)
+            return vals.real.unsqueeze(1)
+        raise ValueError(
+            f"Matrix observable must have shape [2,2] or [{full_dim},{full_dim}] for n_qubits={n_qubits}. "
+            f"Got {tuple(obs.shape)}."
+        )
 
-def _is_compiled_observable_specs(observables: Sequence[Any]) -> bool:
-    if not observables:
-        return False
-    return all(
-        isinstance(spec, dict) and {"kind", "n_qubits"} <= set(spec.keys())
-        for spec in observables
+    if obs.dim() == 3:
+        if tuple(obs.shape) == (n_qubits, 2, 2):
+            _validate_hermitian_matrix(obs, description="Per-qubit local matrix observables")
+            if _is_pauli_z_observable(obs, n_qubits, state_complex.dtype, state_2d.device):
+                return measure_local_Z(state_2d)
+            return measure_local_observable(state_2d, obs)
+        if tuple(obs.shape[1:]) == (full_dim, full_dim):
+            _validate_hermitian_matrix(obs, description="Matrix observables")
+            vals = torch.einsum("bi,mij,bj->bm", state_complex.conj(), obs, state_complex)
+            return vals.real
+        raise ValueError(
+            f"Matrix observables must have shape [n_qubits,2,2] or [m,{full_dim},{full_dim}] for n_qubits={n_qubits}. "
+            f"Got {tuple(obs.shape)}."
+        )
+
+    raise ValueError(
+        f"Matrix observables must be rank-2 or rank-3. Got rank={obs.dim()}."
     )
 
 
@@ -360,114 +413,39 @@ def _measure_compiled_pauli_observables(
     return torch.cat(out_chunks, dim=1).reshape(B, -1)
 
 
-def _reduced_density_matrix_on_wires(
-    state_2d: torch.Tensor,
-    wires: tuple[int, ...],
-    n_qubits: int,
-) -> torch.Tensor:
-    state_complex = state_2d.to(dtype=complex_dtype_like(state_2d))
-    B = state_complex.shape[0]
-    k = len(wires)
-    psi = state_complex.reshape(B, *([2] * n_qubits))
-    moved_from = [1 + wire for wire in wires]
-    moved_to = list(range(1 + n_qubits - k, 1 + n_qubits))
-    psi_on_wires = psi.movedim(moved_from, moved_to).reshape(B, -1, 1 << k)
-    return torch.einsum("bri,brj->bij", psi_on_wires, psi_on_wires.conj())  # [B, 2**k, 2**k]
-
-
-def measure_observables(
+def measure(
     state: torch.Tensor,
-    observables: Sequence[dict[str, Any]],
+    observable: Any = None,
     *,
     pauli_chunk_size: int = 8,
 ) -> torch.Tensor:
     """
-    Measure an arbitrary list of observables on one statevector simulation result.
+    Measure a state with one unified observable interface.
 
-    Each observable spec is a dict with:
-      - required: ``wires`` (int or sequence[int])
-      - exactly one of:
-        - ``pauli``: Pauli operator(s) on wires (e.g. "Z", "ZZ", ["X", "Y"])
-        - ``matrix``: Hermitian local matrix with shape [2**k, 2**k] for k=len(wires)
-      - optional: ``coeff`` (real scalar)
-
-    Returns: [B, n_observables]
+    Supported observables:
+      - ``None``: default per-qubit Pauli-Z
+      - Pauli string: one or more Pauli words separated by ``_``
+      - Hermitian matrix or matrices:
+        - ``[2,2]`` shared local observable
+        - ``[n_qubits,2,2]`` per-qubit local observables
+        - ``[2**n,2**n]`` one full-system observable
+        - ``[m,2**n,2**n]`` multiple full-system observables
     """
     if pauli_chunk_size <= 0:
         raise ValueError("pauli_chunk_size must be >= 1.")
 
     state_2d = _state_to_2d(state)
-    n_qubits = _infer_n_qubits_from_state(state_2d)
-    if not observables:
-        raise ValueError("observables cannot be empty.")
 
-    if _is_compiled_observable_specs(observables):
-        compiled = tuple(observables)
-    else:
-        compiled = compile_measurement_observables(
-            observables=observables,
-            n_qubits=n_qubits,
-            x=state_2d,
-        )
-
-    B = state_2d.shape[0]
-    out = state_2d.new_zeros((B, len(compiled)), dtype=complex_dtype_like(state_2d))
-
-    pauli_cols: list[int] = []
-    pauli_specs: list[dict[str, Any]] = []
-    matrix_groups: dict[tuple[int, ...], list[tuple[int, torch.Tensor]]] = defaultdict(list)
-
-    for col, spec in enumerate(compiled):
-        if spec.get("n_qubits") != n_qubits:
-            raise ValueError(
-                f"Observable #{col} was compiled for n_qubits={spec.get('n_qubits')} "
-                f"but state has n_qubits={n_qubits}."
-            )
-        kind = spec.get("kind")
-        if kind == "pauli":
-            pauli_cols.append(col)
-            pauli_specs.append(spec)
-        elif kind == "matrix":
-            matrix_groups[tuple(spec["wires"])].append((col, spec["matrix"]))
-        else:
-            raise ValueError(f"Observable #{col} has unsupported compiled kind: {kind!r}.")
-
-    if pauli_specs:
-        pauli_vals = _measure_compiled_pauli_observables(
-            state_2d=state_2d,
-            pauli_specs=pauli_specs,
-            n_qubits=n_qubits,
+    if observable is None:
+        return measure_local_Z(state_2d)
+    if isinstance(observable, str):
+        return _measure_from_pauli_string(
+            state_2d,
+            observable,
             pauli_chunk_size=pauli_chunk_size,
         )
-        out[:, pauli_cols] = pauli_vals
-
-    if matrix_groups:
-        state_complex_dtype = complex_dtype_like(state_2d)
-        for wires, entries in matrix_groups.items():
-            rho = _reduced_density_matrix_on_wires(state_2d=state_2d, wires=wires, n_qubits=n_qubits)
-            mats = torch.stack(
-                [mat.to(dtype=state_complex_dtype, device=state_2d.device) for _, mat in entries],
-                dim=0,
-            )  # [m, 2**k, 2**k]
-            vals = torch.einsum("bij,mji->bm", rho, mats)
-            cols = [col for col, _ in entries]
-            out[:, cols] = vals
-
-    return out.real if torch.is_complex(out) else out
-
-
-def measure(state: torch.Tensor, observable: torch.Tensor | None = None) -> torch.Tensor:
-    """
-    Squeeze state’s trailing singleton (if present) and compute per-qubit local expectations.
-    """
-    state_2d = _state_to_2d(state)
-    n = _infer_n_qubits_from_state(state_2d)
-
-    if observable is None or _is_pauli_z_observable(
-        observable,
-        n_qubits=n,
-        dtype=complex_dtype_like(state_2d),
-        device=state_2d.device,
-    ):
-        return measure_local_Z(state_2d)
-    return measure_local_observable(state_2d, observable)
+    if _is_matrix_like(observable):
+        return _measure_from_matrix(state_2d, observable)
+    raise TypeError(
+        "observable must be None, a Pauli string, or a matrix/matrices tensor."
+    )

@@ -7,6 +7,7 @@ from importlib.util import find_spec
 
 import torch
 
+from .Measure import _is_pauli_z_observable
 from .Templates import get_angle_embedding_sigmas
 
 
@@ -30,20 +31,39 @@ class _PennyLaneRunner:
 def maybe_create_pennylane_backend(layer):
     if not getattr(layer.config, "pennylane_backend", False):
         return None
-    if getattr(layer.config, "measurement_observables", None) is not None:
-        warnings.warn(
-            "pennylane_backend=True but measurement_observables are not supported by the PennyLane backend; "
-            "using TorQ backend.",
-            RuntimeWarning,
-        )
-        return None
-    observable_name = getattr(layer.config, "local_observable_name", "Z")
-    if observable_name.lower() not in {"z", "pauliz", "pauli_z", "sigmaz", "sigma_z"}:
-        warnings.warn(
-            "pennylane_backend=True but local_observable_name is not Pauli-Z; using TorQ backend.",
-            RuntimeWarning,
-        )
-        return None
+
+    # PennyLane backend currently supports only local per-qubit Pauli-Z output.
+    observable = getattr(layer, "observables", None)
+    if isinstance(observable, str):
+        cleaned = observable.replace(" ", "").upper()
+        if cleaned != "Z":
+            warnings.warn(
+                "pennylane_backend=True but observables is not local per-qubit Pauli-Z; using TorQ backend.",
+                RuntimeWarning,
+            )
+            return None
+    elif observable is not None:
+        if not torch.is_tensor(observable):
+            try:
+                observable = torch.as_tensor(observable)
+            except Exception:
+                warnings.warn(
+                    "pennylane_backend=True but observables is not local per-qubit Pauli-Z; using TorQ backend.",
+                    RuntimeWarning,
+                )
+                return None
+        if not _is_pauli_z_observable(
+            observable,
+            n_qubits=layer.n_qubits,
+            dtype=observable.to(dtype=torch.complex64).dtype,
+            device=observable.device,
+        ):
+            warnings.warn(
+                "pennylane_backend=True but observables is not local per-qubit Pauli-Z; using TorQ backend.",
+                RuntimeWarning,
+            )
+            return None
+
     if not _pennylane_dependencies_available():
         warnings.warn(
             "pennylane_backend=True but torq_bench and/or pennylane is not installed; "
