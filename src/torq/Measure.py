@@ -217,7 +217,7 @@ def _compile_pauli_word_on_qubits(
     }
 
 
-def _compile_sliding_pauli_word(  # TODO: can and should it be implemented using einsum instead of a python loop? can be made into layers of measurements, where each layer applies the most amount of observables in parallel, and the number of layers is the max number of observables that overlap on any qubit.
+def _compile_sliding_pauli_word(
     pauli_word: str,
     *,
     n_qubits: int,
@@ -260,6 +260,28 @@ def _as_tensor_observable(value: Any, *, dtype: torch.dtype, device: torch.devic
     return torch.as_tensor(value).to(dtype=dtype, device=device)
 
 
+def _measure_sliding_all_z_word(
+    state_2d: torch.Tensor,
+    window_size: int,
+) -> torch.Tensor:
+    n_qubits = _infer_n_qubits_from_state(state_2d)
+    if window_size > n_qubits:
+        raise ValueError(
+            f"Pauli-string observables must have length <= n_qubits={n_qubits}. "
+            f"Got length={window_size}."
+        )
+    if window_size == 1:
+        return measure_local_Z(state_2d)
+
+    probs = (state_2d.conj() * state_2d).real
+    dim = probs.shape[1]
+    basis = torch.arange(dim, device=state_2d.device, dtype=torch.long)
+    bit_shifts = torch.arange(n_qubits - 1, -1, -1, device=state_2d.device, dtype=torch.long).unsqueeze(1)
+    z_signs = 1 - 2 * ((basis.unsqueeze(0) >> bit_shifts) & 1).to(dtype=probs.dtype)
+    window_signs = z_signs.unfold(0, window_size, 1).prod(dim=-1)
+    return probs @ window_signs.transpose(0, 1)
+
+
 def _measure_single_pauli_word(
     state_2d: torch.Tensor,
     pauli_word: str,
@@ -285,6 +307,9 @@ def _measure_single_pauli_word(
                 )
             case "I":
                 return state_2d.real.new_ones((state_2d.shape[0], n_qubits))
+
+    if set(word) == {"Z"}:
+        return _measure_sliding_all_z_word(state_2d, len(word))
 
     compiled = _compile_sliding_pauli_word(
         word,

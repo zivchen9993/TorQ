@@ -6,6 +6,24 @@ from torq.Measure import measure
 from torq.SingleQubitGates import sigma_X_like, sigma_Z_like
 
 
+def _sliding_z_word_matrices(n_qubits: int, word_size: int, *, dtype: torch.dtype) -> torch.Tensor:
+    eye = torch.eye(2, dtype=dtype)
+    z = torch.diag(torch.tensor([1.0, -1.0], dtype=dtype))
+    mats = []
+    for start in range(n_qubits - word_size + 1):
+        factors = []
+        for qubit in range(n_qubits):
+            if start <= qubit < start + word_size:
+                factors.append(z)
+            else:
+                factors.append(eye)
+        mat = factors[0]
+        for factor in factors[1:]:
+            mat = torch.kron(mat, factor)
+        mats.append(mat)
+    return torch.stack(mats, dim=0)
+
+
 @pytest.mark.quick
 def test_measure_defaults_to_pauli_z():
     state = torch.zeros(1, 4, dtype=torch.complex64)
@@ -61,6 +79,22 @@ def test_measure_supports_grouped_pauli_words():
     out = measure(state, "z_zz_x")
     expected = torch.tensor([[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]])
     assert torch.allclose(out, expected, atol=1e-7, rtol=1e-7)
+
+
+@pytest.mark.full
+def test_measure_repeated_z_word_matches_matrix_stack():
+    torch.manual_seed(5)
+    n_qubits = 5
+    dim = 2 ** n_qubits
+    raw = torch.complex(
+        torch.randn(2, dim, dtype=torch.float64),
+        torch.randn(2, dim, dtype=torch.float64),
+    )
+    state = raw / torch.linalg.norm(raw, dim=1, keepdim=True)
+    zzz_mats = _sliding_z_word_matrices(n_qubits, 3, dtype=state.dtype)
+    out_fast = measure(state, "zzz")
+    out_matrix = measure(state, zzz_mats)
+    assert torch.allclose(out_fast, out_matrix, atol=1e-7, rtol=1e-7)
 
 
 @pytest.mark.full

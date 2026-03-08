@@ -50,6 +50,7 @@ currently available.
     - default fast per-qubit local Pauli-Z (`[batch, n_qubits]`)
     - configurable local/non-local observables per run (`[batch, n_observables]`)
     - Pauli-string observable sets optimized with chunked vectorization
+    - repeated all-`Z` Pauli words (for example `zz`, `zzz`) use a dedicated diagonal fast path
 - Differentiable with PyTorch autograd
 
 - To benchmark performance against PennyLane, please use the TorQ-bench repository:
@@ -153,6 +154,7 @@ print(y.shape)  # [8, 11] for q=4
 Notes:
 - If `observables` is not set (`None`), TorQ measures local Pauli-Z per qubit.
 - The default per-qubit Pauli-Z path remains the fastest option when that is your only required output.
+- Repeated all-`Z` words such as `"zz"` and `"zzz"` are also measured with a dedicated fast path.
 
 ## Low-level functions
 
