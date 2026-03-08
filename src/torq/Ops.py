@@ -1,6 +1,9 @@
-import torch
-import string
 import math
+import os
+import string
+
+import torch
+
 from . import SingleQubitGates as single
 from ._like import likeable
 
@@ -12,6 +15,17 @@ except ImportError:
     _USE_CUQUANTUM = False
 
 _CNOT_PERM_CACHE = {}
+_QUBIT_PAIR_INDEX_CACHE = {}
+_RUNTIME_CHECKS = os.getenv("TORQ_RUNTIME_CHECKS", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def runtime_checks_enabled() -> bool:
+    return _RUNTIME_CHECKS
+
+
+def _raise_if_nonfinite(name: str, tensor: torch.Tensor) -> None:
+    if runtime_checks_enabled() and not torch.isfinite(tensor).all():
+        raise RuntimeError(f"{name}: encountered non-finite values")
 
 def multi_dim_tensor_product(*args):
     """
@@ -111,10 +125,8 @@ def apply_matrix(state: torch.Tensor, U: torch.Tensor) -> torch.Tensor:
     using cuQuantum.contract if available, otherwise torch.matmul.
     """
     device = U.device
-    ####### Protection #######
-    if not torch.isfinite(state).all(): raise RuntimeError("apply_matrix: state non-finite (in)")
-    if not torch.isfinite(U).all():     raise RuntimeError("apply_matrix: U non-finite (in)")
-    ####################
+    _raise_if_nonfinite("apply_matrix(state)", state)
+    _raise_if_nonfinite("apply_matrix(U)", U)
     # If U got returned as [1,dim,dim], drop that leading 1
     if U.dim() == 3 and U.shape[0] == 1:
            U = U.squeeze(0)  # now [dim,dim]
@@ -125,10 +137,28 @@ def apply_matrix(state: torch.Tensor, U: torch.Tensor) -> torch.Tensor:
     else:
         # fallback to a single big matmul
         out = torch.matmul(state, U.T).to(device)
-    ####### Protection #######
-    if not torch.isfinite(out).all():   raise RuntimeError("apply_matrix: out non-finite")
-    ####################
+    _raise_if_nonfinite("apply_matrix(out)", out)
     return out
+
+
+def _get_qubit_pair_indices(n_qubits: int, qubit_id: int, qubit_order: str, device: torch.device):
+    order = "msb" if qubit_order == "msb" else "lsb"
+    key = (n_qubits, qubit_id, order, device.type, device.index)
+    cached = _QUBIT_PAIR_INDEX_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    dim = 1 << n_qubits
+    idx = torch.arange(dim, device=device)
+    if order == "msb":
+        stride = 1 << (n_qubits - 1 - qubit_id)
+    else:
+        stride = 1 << qubit_id
+    i0 = idx[(idx // stride) % 2 == 0]
+    i1 = i0 + stride
+    _QUBIT_PAIR_INDEX_CACHE[key] = (i0, i1)
+    return i0, i1
+
 
 def apply_single_qubit_wall_batched(state, gates, n_qubits, qubit_order="msb"):
     """
@@ -136,10 +166,8 @@ def apply_single_qubit_wall_batched(state, gates, n_qubits, qubit_order="msb"):
     gates: [B, n_qubits, 2, 2]  (per-sample, per-qubit 2x2)
     returns: state with the wall applied, same shape as input
     """
-    ####### Protection #######
-    if not torch.isfinite(state).all(): raise RuntimeError("apply_single_qubit_wall_batched: state non-finite (in)")
-    if not torch.isfinite(gates).all():     raise RuntimeError("apply_single_qubit_wall_batched: gates non-finite (in)")
-    ####################
+    _raise_if_nonfinite("apply_single_qubit_wall_batched(state)", state)
+    _raise_if_nonfinite("apply_single_qubit_wall_batched(gates)", gates)
     squeeze_last = False
     if state.dim() == 3 and state.shape[-1] == 1:
         squeeze_last = True
@@ -162,18 +190,8 @@ def apply_single_qubit_wall_batched(state, gates, n_qubits, qubit_order="msb"):
     else:
         raise ValueError("apply_single_qubit_wall_batched: gates must be [B,n,2,2] or [n,2,2]")
 
-    idx = torch.arange(dim, device=state.device)
-
     for q in range(n):
-        # stride for the chosen qubit bit
-        if qubit_order == "msb":
-            stride = 1 << (n - 1 - q)
-        else:  # little-endian
-            stride = 1 << q
-
-        # indices with bit q == 0, and their paired indices with bit q == 1
-        i0 = idx[(idx // stride) % 2 == 0]
-        i1 = i0 + stride
+        i0, i1 = _get_qubit_pair_indices(n, q, qubit_order, state.device)
 
         v = torch.stack([state[:, i0], state[:, i1]], dim=2)      # [B, M, 2]
         v = v.transpose(1, 2)                                     # [B, 2, M]
@@ -192,10 +210,45 @@ def apply_single_qubit_wall_batched(state, gates, n_qubits, qubit_order="msb"):
     output = state
     if squeeze_last:
         output = output.unsqueeze(-1)
-    ####### Protection #######
-    if not torch.isfinite(output).all():   raise RuntimeError("apply_single_qubit_wall_batched: output non-finite")
-    ####################
+    _raise_if_nonfinite("apply_single_qubit_wall_batched(out)", output)
     return output
+
+
+def apply_cnot(state: torch.Tensor, n_qubits: int, control_qubit_id: int, target_qubit_id: int, qubit_order="msb") -> torch.Tensor:
+    squeeze_last = False
+    if state.dim() == 3 and state.shape[-1] == 1:
+        squeeze_last = True
+        state = state.squeeze(-1)
+    if state.dim() != 2 or state.shape[1] != (1 << n_qubits):
+        raise ValueError("apply_cnot: state must have shape [B, 2**n] or [B, 2**n, 1].")
+
+    perm = _get_cnot_perm(
+        n_qubits=n_qubits,
+        control_qubit_id=control_qubit_id,
+        target_qubit_id=target_qubit_id,
+        qubit_order=qubit_order,
+        device=state.device,
+    )
+    out = state[:, perm].contiguous()
+    if squeeze_last:
+        out = out.unsqueeze(-1)
+    return out
+
+
+def apply_cnot_ladder(state: torch.Tensor, n_qubits: int, r: int = 0, qubit_order="msb") -> torch.Tensor:
+    if (r + 1) == n_qubits:
+        return state
+    out = state
+    for control_qubit_id in range(n_qubits):
+        target_qubit_id = (control_qubit_id + r + 1) % n_qubits
+        out = apply_cnot(
+            out,
+            n_qubits=n_qubits,
+            control_qubit_id=control_qubit_id,
+            target_qubit_id=target_qubit_id,
+            qubit_order=qubit_order,
+        )
+    return out
 
 
 def _get_cnot_perm(n_qubits, control_qubit_id, target_qubit_id, qubit_order, device):

@@ -1,5 +1,5 @@
 import math
-import string
+from functools import lru_cache
 from typing import Any, Sequence
 
 import torch
@@ -7,6 +7,11 @@ import torch
 from .Dtypes import complex_dtype_like
 from .SingleQubitGates import sigma_X_like, sigma_Y_like, sigma_Z_like
 from ._like import likeable
+
+
+_BASIS_INDEX_CACHE: dict[tuple[int, str, int | None], torch.Tensor] = {}
+_Z_SIGNS_CACHE: dict[tuple[int, str, int | None, torch.dtype], torch.Tensor] = {}
+_ALL_Z_WINDOW_SIGNS_CACHE: dict[tuple[int, int, str, int | None, torch.dtype], torch.Tensor] = {}
 
 
 @likeable
@@ -35,6 +40,43 @@ def _infer_n_qubits_from_state(state_2d: torch.Tensor) -> int:
     if 2 ** n != dim:
         raise ValueError("State length must be a power of two.")
     return n
+
+
+def _basis_cache_key(n_qubits: int, device: torch.device) -> tuple[int, str, int | None]:
+    return n_qubits, device.type, device.index
+
+
+def _tensor_cache_key(n_qubits: int, device: torch.device, dtype: torch.dtype) -> tuple[int, str, int | None, torch.dtype]:
+    return n_qubits, device.type, device.index, dtype
+
+
+def _get_basis_indices(n_qubits: int, device: torch.device) -> torch.Tensor:
+    key = _basis_cache_key(n_qubits, device)
+    cached = _BASIS_INDEX_CACHE.get(key)
+    if cached is None:
+        cached = torch.arange(1 << n_qubits, device=device, dtype=torch.long)
+        _BASIS_INDEX_CACHE[key] = cached
+    return cached
+
+
+def _get_z_signs(n_qubits: int, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    key = _tensor_cache_key(n_qubits, device, dtype)
+    cached = _Z_SIGNS_CACHE.get(key)
+    if cached is None:
+        basis = _get_basis_indices(n_qubits, device)
+        bit_shifts = torch.arange(n_qubits - 1, -1, -1, device=device, dtype=torch.long).unsqueeze(1)
+        cached = 1 - 2 * ((basis.unsqueeze(0) >> bit_shifts) & 1).to(dtype=dtype)
+        _Z_SIGNS_CACHE[key] = cached
+    return cached
+
+
+def _get_all_z_window_signs(window_size: int, *, n_qubits: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    key = (n_qubits, window_size, device.type, device.index, dtype)
+    cached = _ALL_Z_WINDOW_SIGNS_CACHE.get(key)
+    if cached is None:
+        cached = _get_z_signs(n_qubits, device=device, dtype=dtype).unfold(0, window_size, 1).prod(dim=-1)
+        _ALL_Z_WINDOW_SIGNS_CACHE[key] = cached
+    return cached
 
 
 def _is_pauli_z_observable(observable: torch.Tensor, n_qubits: int, dtype: torch.dtype, device: torch.device) -> bool:
@@ -111,30 +153,10 @@ def measure_local_Z(state: torch.Tensor) -> torch.Tensor:
     Returns: [B, n_qubits].
     """
     state = _state_to_2d(state)
-    B, _ = state.shape
     n = _infer_n_qubits_from_state(state)
-
-    # 1) probabilities over each basis amplitude
-    probs = (state.conj() * state).view(B, *([2] * n)).real  # [B,2,2,...,2]
-
-    # 2) build Z_axes: shape [n,2,2,...,2]
-    pauli_z = torch.tensor([1.0, -1.0], device=probs.device, dtype=probs.dtype)
-    full_shape = [2] * n
-    Z_axes = []
-    for q in range(n):
-        vs = [1] * n
-        vs[q] = 2
-        Zq = pauli_z.view(vs).expand(*full_shape)
-        Z_axes.append(Zq)
-    Z_axes = torch.stack(Z_axes, dim=0)  # [n,2,2,...,2]
-
-    # 3) pick n distinct letters that aren’t 'b' or 'q'
-    letters = [c for c in string.ascii_lowercase if c not in ('b', 'q')]
-    idx = ''.join(letters[:n])  # e.g. 'acdef' for 5 qubits
-
-    # equation: 'bacdef...,qacdef...->bq'
-    eq = f"b{idx},q{idx}->bq"
-    return torch.einsum(eq, probs, Z_axes)
+    probs = (state.conj() * state).real
+    z_signs = _get_z_signs(n, device=state.device, dtype=probs.dtype)
+    return probs @ z_signs.transpose(0, 1)
 
 
 def _canonicalize_pauli_string(pauli: str) -> str:
@@ -179,8 +201,6 @@ def _compile_pauli_word_on_qubits(
     qubits: Sequence[int],
     *,
     n_qubits: int,
-    dtype: torch.dtype,
-    device: torch.device,
     obs_idx: int,
 ) -> dict[str, Any]:
     if len(pauli_word) != len(qubits):
@@ -213,35 +233,49 @@ def _compile_pauli_word_on_qubits(
         "pauli_ops": tuple(pauli_word),
         "flip_mask": int(flip_mask),
         "yz_mask": int(yz_mask),
-        "phase": torch.as_tensor(((-1j) ** n_y), dtype=dtype, device=device),
+        "phase": ((-1j) ** n_y),
     }
+
+
+@lru_cache(maxsize=256)
+def _cached_sliding_pauli_word_metadata(pauli_word: str, n_qubits: int) -> tuple[tuple[tuple[int, ...], int, int, complex], ...]:
+    if len(pauli_word) > n_qubits:
+        raise ValueError(
+            f"Pauli-string observables must have length <= n_qubits={n_qubits}. "
+            f"Got length={len(pauli_word)}."
+        )
+    metadata = []
+    for start in range(n_qubits - len(pauli_word) + 1):
+        qubits = tuple(range(start, start + len(pauli_word)))
+        spec = _compile_pauli_word_on_qubits(
+            pauli_word,
+            qubits=qubits,
+            n_qubits=n_qubits,
+            obs_idx=start,
+        )
+        metadata.append((qubits, spec["flip_mask"], spec["yz_mask"], spec["phase"]))
+    return tuple(metadata)
 
 
 def _compile_sliding_pauli_word(
     pauli_word: str,
     *,
     n_qubits: int,
-    dtype: torch.dtype,
-    device: torch.device,
     obs_idx_offset: int = 0,
 ) -> tuple[dict[str, Any], ...]:
-    if len(pauli_word) > n_qubits:
-        raise ValueError(
-            f"Pauli-string observables must have length <= n_qubits={n_qubits}. "
-            f"Got length={len(pauli_word)}."
-        )
-
     compiled = []
-    for start in range(n_qubits - len(pauli_word) + 1):
+    for local_idx, (qubits, flip_mask, yz_mask, phase) in enumerate(_cached_sliding_pauli_word_metadata(pauli_word, n_qubits)):
         compiled.append(
-            _compile_pauli_word_on_qubits(
-                pauli_word,
-                qubits=tuple(range(start, start + len(pauli_word))),
-                n_qubits=n_qubits,
-                dtype=dtype,
-                device=device,
-                obs_idx=obs_idx_offset + len(compiled),
-            )
+            {
+                "kind": "pauli",
+                "n_qubits": n_qubits,
+                "qubits": qubits,
+                "pauli_ops": tuple(pauli_word),
+                "flip_mask": flip_mask,
+                "yz_mask": yz_mask,
+                "phase": phase,
+                "obs_idx": obs_idx_offset + local_idx,
+            }
         )
     return tuple(compiled)
 
@@ -274,11 +308,12 @@ def _measure_sliding_all_z_word(
         return measure_local_Z(state_2d)
 
     probs = (state_2d.conj() * state_2d).real
-    dim = probs.shape[1]
-    basis = torch.arange(dim, device=state_2d.device, dtype=torch.long)
-    bit_shifts = torch.arange(n_qubits - 1, -1, -1, device=state_2d.device, dtype=torch.long).unsqueeze(1)
-    z_signs = 1 - 2 * ((basis.unsqueeze(0) >> bit_shifts) & 1).to(dtype=probs.dtype)
-    window_signs = z_signs.unfold(0, window_size, 1).prod(dim=-1)
+    window_signs = _get_all_z_window_signs(
+        window_size,
+        n_qubits=n_qubits,
+        device=state_2d.device,
+        dtype=probs.dtype,
+    )
     return probs @ window_signs.transpose(0, 1)
 
 
@@ -314,8 +349,6 @@ def _measure_single_pauli_word(
     compiled = _compile_sliding_pauli_word(
         word,
         n_qubits=n_qubits,
-        dtype=complex_dtype_like(state_2d),
-        device=state_2d.device,
     )
     out = _measure_compiled_pauli_observables(
         state_2d=state_2d,
@@ -402,18 +435,18 @@ def _measure_from_matrix(
 
 
 def _phase_signs_for_masks(
-    basis_indices: torch.Tensor,
     yz_masks: torch.Tensor,
     n_qubits: int,
+    device: torch.device,
     real_dtype: torch.dtype,
 ) -> torch.Tensor:
-    signs = torch.ones((yz_masks.shape[0], basis_indices.shape[0]), dtype=real_dtype, device=basis_indices.device)
+    z_signs = _get_z_signs(n_qubits, device=device, dtype=real_dtype)
+    signs = torch.ones((yz_masks.shape[0], z_signs.shape[1]), dtype=real_dtype, device=device)
     for bit_pos in range(n_qubits):
         active = ((yz_masks >> bit_pos) & 1).bool()
         if not torch.any(active):
             continue
-        bit_values = ((basis_indices >> bit_pos) & 1).to(dtype=real_dtype)
-        signs[active] = signs[active] * (1 - 2 * bit_values)
+        signs[active] = signs[active] * z_signs[n_qubits - 1 - bit_pos]
     return signs
 
 
@@ -424,8 +457,8 @@ def _measure_compiled_pauli_observables(
     pauli_chunk_size: int,
 ) -> torch.Tensor:
     state_complex = state_2d.to(dtype=complex_dtype_like(state_2d))
-    B, dim = state_complex.shape
-    basis = torch.arange(dim, device=state_complex.device, dtype=torch.long)
+    B, _ = state_complex.shape
+    basis = _get_basis_indices(n_qubits, state_complex.device)
     bra = state_complex.conj().unsqueeze(1)  # [B, 1, dim]
     out_chunks = []
 
@@ -434,7 +467,7 @@ def _measure_compiled_pauli_observables(
         flip_masks = torch.tensor([spec["flip_mask"] for spec in chunk], device=state_complex.device, dtype=torch.long)
         yz_masks = torch.tensor([spec["yz_mask"] for spec in chunk], device=state_complex.device, dtype=torch.long)
         phases = torch.stack(
-            [spec["phase"].to(dtype=state_complex.dtype, device=state_complex.device) for spec in chunk],
+            [torch.as_tensor(spec["phase"], dtype=state_complex.dtype, device=state_complex.device) for spec in chunk],
             dim=0,
         )  # [m]
 
@@ -442,9 +475,9 @@ def _measure_compiled_pauli_observables(
         ket_transformed = state_complex[:, gather_idx]  # [B, m, dim]
 
         signs = _phase_signs_for_masks(
-            basis_indices=basis,
             yz_masks=yz_masks,
             n_qubits=n_qubits,
+            device=state_complex.device,
             real_dtype=state_complex.real.dtype,
         )
         phase_per_basis = phases.unsqueeze(1) * signs.to(dtype=state_complex.dtype)  # [m, dim]

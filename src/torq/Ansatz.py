@@ -1,6 +1,7 @@
 # torq/Ansatz.py
 import torch
-import torq as aq
+
+from . import Layout as layout, Ops as ops, Rotations as rotations, SingleQubitGates as single, Templates as templates
 
 class BaseAnsatz:
     """Uniform interface: per_layer_param_shape, layer_op(layer_idx, weights)->[2**n,2**n]."""
@@ -15,20 +16,33 @@ class BaseAnsatz:
     def layer_op(self, layer_idx: int, weights: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
+    def apply_layer(self, state: torch.Tensor, layer_idx: int, weights: torch.Tensor) -> torch.Tensor:
+        return ops.apply_matrix(state, self.layer_op(layer_idx, weights))
+
 
 class BasicEntangling(BaseAnsatz):
     per_layer_param_shape = (None, 3)  # resolved later to (n_qubits, 3)
 
     def __init__(self, n_qubits, n_layers, device=None):
         super().__init__(n_qubits, n_layers, device)
-        # one CNOT ladder reused for all layers
-        # uses the likable path so dtype/device are inferred from a tensor argument
-        dummy = torch.empty(1, device=device)  # TODO: is the dummy really needed? can we just call get_cnot_ladder with r=0 and no x argument?
-        self.cnot = aq.get_cnot_ladder(n_qubits, r=0, x=dummy)  # precompute once
+        self._cnot_cache = {}
+
+    def _get_cnot(self, weights: torch.Tensor) -> torch.Tensor:
+        key = (weights.device.type, weights.device.index)
+        cached = self._cnot_cache.get(key)
+        if cached is None:
+            cached = layout.get_cnot_ladder(self.n, r=0, x=weights)
+            self._cnot_cache[key] = cached
+        return cached
 
     def layer_op(self, layer_idx, weights):
         # weights: [n_qubits,3]
-        return aq.basic_or_strongly_single_layer(self.n, weights, self.cnot).to(weights.device)
+        return templates.basic_or_strongly_single_layer(self.n, weights, self._get_cnot(weights)).to(weights.device)
+
+    def apply_layer(self, state: torch.Tensor, layer_idx: int, weights: torch.Tensor) -> torch.Tensor:
+        gates = rotations.get_rot_gate(weights)
+        state = ops.apply_single_qubit_wall_batched(state, gates, self.n)
+        return ops.apply_cnot_ladder(state, n_qubits=self.n, r=0)
 
 
 class StronglyEntangling(BaseAnsatz):
@@ -36,15 +50,23 @@ class StronglyEntangling(BaseAnsatz):
 
     def __init__(self, n_qubits, n_layers, device=None):
         super().__init__(n_qubits, n_layers, device)
-        dummy = torch.empty(1, device=device)
-        # one ladder per "r" value
-        self.cnots = [
-            aq.get_cnot_ladder(n_qubits, r=r, x=dummy)
-            for r in range(n_layers)
-        ]
+        self._cnot_cache = {}
+
+    def _get_cnot(self, layer_idx: int, weights: torch.Tensor) -> torch.Tensor:
+        key = (layer_idx, weights.device.type, weights.device.index)
+        cached = self._cnot_cache.get(key)
+        if cached is None:
+            cached = layout.get_cnot_ladder(self.n, r=layer_idx, x=weights)
+            self._cnot_cache[key] = cached
+        return cached
 
     def layer_op(self, layer_idx, weights):
-        return aq.basic_or_strongly_single_layer(self.n, weights, self.cnots[layer_idx]).to(weights.device)
+        return templates.basic_or_strongly_single_layer(self.n, weights, self._get_cnot(layer_idx, weights)).to(weights.device)
+
+    def apply_layer(self, state: torch.Tensor, layer_idx: int, weights: torch.Tensor) -> torch.Tensor:
+        gates = rotations.get_rot_gate(weights)
+        state = ops.apply_single_qubit_wall_batched(state, gates, self.n)
+        return ops.apply_cnot_ladder(state, n_qubits=self.n, r=layer_idx)
 
 
 class CrossMesh(BaseAnsatz):
@@ -53,38 +75,53 @@ class CrossMesh(BaseAnsatz):
     def __init__(self, n_qubits, n_layers, variant: str, device=None):
         super().__init__(n_qubits, n_layers, device)
         self.variant = variant
-        dummy = torch.empty(1, device=device)
+        self._cross_cache = {}
         if variant == "cross_mesh_cx_rot":
-            self.cross = aq.get_cross_mesh_control_gate_layer(
-                n_qubits, sigma=aq.sigma_X_like, weights=None, device=device
-            )
             self.per_layer_param_shape = (n_qubits, 3)
         elif variant == "cross_mesh":
             self.per_layer_param_shape = (n_qubits**2,)
-            self.cross = None
         elif variant == "cross_mesh_2_rots":
             self.per_layer_param_shape = (n_qubits + n_qubits**2,)
-            self.cross = None
         else:
             raise ValueError("Unknown cross-mesh variant")
+
+    def _get_cross_layer(self, weights: torch.Tensor) -> torch.Tensor:
+        key = (weights.device.type, weights.device.index)
+        cached = self._cross_cache.get(key)
+        if cached is None:
+            cached = layout.get_cross_mesh_control_gate_layer(
+                self.n,
+                sigma=single.sigma_X_like,
+                weights=None,
+                device=weights.device,
+            )
+            self._cross_cache[key] = cached
+        return cached
 
     def layer_op(self, layer_idx, weights):
         if self.variant == "cross_mesh_cx_rot":
             # Templates.cross_mesh_single_layer can take a precomputed layer
-            return aq.cross_mesh_single_layer(self.n, weights,
-                                              sigma_single_rot_first=aq.get_rot_gate,
-                                              sigma_single_rot_second=None,
-                                              cnot_layer_precomputed=self.cross).to(weights.device)
+            return templates.cross_mesh_single_layer(
+                self.n,
+                weights,
+                sigma_single_rot_first=rotations.get_rot_gate,
+                sigma_single_rot_second=None,
+                cnot_layer_precomputed=self._get_cross_layer(weights),
+            ).to(weights.device)
         else:
-            return aq.cross_mesh_single_layer(self.n, weights, sigma_single_rot_first=aq.get_rx,
-                                              sigma_single_rot_second=(None if self.variant=="cross_mesh" else aq.get_rz),
-                                              cnot_layer_precomputed=None).to(weights.device)
+            return templates.cross_mesh_single_layer(
+                self.n,
+                weights,
+                sigma_single_rot_first=rotations.get_rx,
+                sigma_single_rot_second=(None if self.variant == "cross_mesh" else rotations.get_rz),
+                cnot_layer_precomputed=None,
+            ).to(weights.device)
 
 class NoEntanglement(BaseAnsatz):
     per_layer_param_shape = (None, 3)
 
     def layer_op(self, layer_idx, weights):
-        return aq.get_single_qubit_pauli_rot_ops(self.n, weights, sigma_func=aq.get_rot_gate).to(weights.device)
+        return layout.get_single_qubit_pauli_rot_ops(self.n, weights, sigma_func=rotations.get_rot_gate).to(weights.device)
 
 
 def make_ansatz(name: str, n_qubits: int, n_layers: int, device=None) -> BaseAnsatz:

@@ -3,6 +3,7 @@ import torch.nn as nn
 import torq as tq
 from .Ansatz import make_ansatz
 from .Measure import _normalize_pauli_observable_string
+from .Ops import _raise_if_nonfinite
 from ._pennylane_backend import maybe_create_pennylane_backend
 
 
@@ -44,8 +45,7 @@ class QLayer(nn.Module):
         self._optional_backend = maybe_create_pennylane_backend(self)
 
     def forward(self, x):
-        if not torch.isfinite(self.params).all():
-            raise ValueError(f"QLayer.params has NaN: {self.params}")
+        _raise_if_nonfinite("QLayer.params", self.params)
         if self._optional_backend is not None:
             return self._optional_backend.forward(x)
         if not self.data_reupload_every:
@@ -81,8 +81,7 @@ class QLayer(nn.Module):
                 else:
                     w = self.params[layer, d_reup]
                 idx = d_reup if self.data_reupload_every else layer
-                U = self.ansatz.layer_op(idx, w)  # [2**n, 2**n]
-                state = tq.apply_matrix(state, U)
+                state = self.ansatz.apply_layer(state, idx, w)
 
             if self.data_reupload_every:
                 state = tq.data_reuploading(state, data_gates).squeeze(-1)  # [B,2**n]
@@ -99,8 +98,7 @@ class QLayer(nn.Module):
                     w = angles_reparametrize_last[d_reup]
                 else:
                     w = self.params_last_layer_reupload[d_reup]
-                U = self.ansatz.layer_op(layer_idx=d_reup, weights=w)  # [2**n, 2**n]
-                state = tq.apply_matrix(state, U)
+                state = self.ansatz.apply_layer(state, d_reup, w)
 
         return tq.measure(
             state,

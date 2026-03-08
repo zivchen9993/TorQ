@@ -9,11 +9,7 @@ def get_rz(phi, only_first_column=False):
     Returns: tensor of shape [B, 2, 2]
     """
     # Use the device of the input tensor
-    ####### Protection #######
-    if not torch.isfinite(phi).all():
-        bad = (~torch.isfinite(phi)).nonzero(as_tuple=False)[0].tolist()
-        raise RuntimeError(f"[nan] get_rz phi @ {bad}")
-    ####################
+    ops._raise_if_nonfinite("get_rz(phi)", phi)
     if phi.dim() == 0:
         phi = phi.unsqueeze(0)
     coeff1 = torch.exp(-1j * (phi / 2)).unsqueeze(-1).unsqueeze(-1)
@@ -25,11 +21,7 @@ def get_rz(phi, only_first_column=False):
         # ketbra00 = top_part = torch.tensor([[1, 0], [0, 0]], dtype=dev.dtype_complex, device=device).unsqueeze(0)
         # ketbra11 = bot_part = torch.tensor([[0, 0], [0, 1]], dtype=dev.dtype_complex, device=device).unsqueeze(0)
         out = (coeff1 * single.ketbra00_like(x=coeff1).unsqueeze(0)) + (coeff2 * single.ketbra11_like(x=coeff2).unsqueeze(0))
-    ####### Protection #######
-    if not torch.isfinite(out).all():
-        bad = (~torch.isfinite(out)).nonzero(as_tuple=False)[0].tolist()
-        raise RuntimeError(f"[nan] get_rz out @ {bad}")
-    ####################
+    ops._raise_if_nonfinite("get_rz(out)", out)
     return out
 
 
@@ -39,11 +31,7 @@ def get_rx(phi, only_first_column=False):
     Returns: tensor of shape [B, 2, 2]
     """
     # device = phi.device
-    ####### Protection #######
-    if not torch.isfinite(phi).all():
-        bad = (~torch.isfinite(phi)).nonzero(as_tuple=False)[0].tolist()
-        raise RuntimeError(f"[nan] get_rx phi @ {bad}")
-    ####################
+    ops._raise_if_nonfinite("get_rx(phi)", phi)
     if phi.dim() == 0:
         phi = phi.unsqueeze(0)
     c = torch.cos(phi / 2).unsqueeze(-1).unsqueeze(-1)
@@ -54,11 +42,7 @@ def get_rx(phi, only_first_column=False):
         row1 = torch.cat([c, -1j * s], dim=-1)
         row2 = torch.cat([-1j * s, c], dim=-1)
         out = torch.cat([row1, row2], dim=-2)
-    ####### Protection #######
-    if not torch.isfinite(out).all():
-        bad = (~torch.isfinite(out)).nonzero(as_tuple=False)[0].tolist()
-        raise RuntimeError(f"[nan] get_rx out @ {bad}")
-    ####################
+    ops._raise_if_nonfinite("get_rx(out)", out)
     return out
 
 
@@ -68,11 +52,7 @@ def get_ry(phi, only_first_column=False):
     Returns: tensor of shape [B, 2, 2]
     """
     # device = phi.device
-    ####### Protection #######
-    if not torch.isfinite(phi).all():
-        bad = (~torch.isfinite(phi)).nonzero(as_tuple=False)[0].tolist()
-        raise RuntimeError(f"[nan] get_ry phi @ {bad}")
-    ####################
+    ops._raise_if_nonfinite("get_ry(phi)", phi)
     if phi.dim() == 0:
         phi = phi.unsqueeze(0)
     # c = torch.cos(phi / 2).unsqueeze(-1).unsqueeze(-1).to(dtype=dev.dtype_complex)
@@ -88,11 +68,7 @@ def get_ry(phi, only_first_column=False):
         row1 = torch.cat([c, -s], dim=-1)
         row2 = torch.cat([s, c], dim=-1)
         out = torch.cat([row1, row2], dim=-2)
-    ####### Protection #######
-    if not torch.isfinite(out).all():
-        bad = (~torch.isfinite(out)).nonzero(as_tuple=False)[0].tolist()
-        raise RuntimeError(f"[nan] get_ry out @ {bad}")
-    ####################
+    ops._raise_if_nonfinite("get_ry(out)", out)
     return out
 
 
