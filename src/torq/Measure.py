@@ -160,6 +160,20 @@ def _pauli_spec_is_all_identity(pauli: str) -> bool:
     return bool(chars) and all(ch == "I" for ch in chars)
 
 
+def _normalize_pauli_observable_string(observable: str, n_qubits: int) -> str:
+    cleaned = _canonicalize_pauli_string(observable)
+    if _pauli_spec_is_all_identity(cleaned):
+        raise ValueError("Pauli-string observable cannot be all identity ('I').")
+
+    for pauli_word in _split_pauli_groups(cleaned):
+        if len(pauli_word) > n_qubits:
+            raise ValueError(
+                f"Pauli-string observables must have length <= n_qubits={n_qubits}. "
+                f"Got length={len(pauli_word)}."
+            )
+    return cleaned
+
+
 def _compile_pauli_word_on_qubits(
     pauli_word: str,
     qubits: Sequence[int],
@@ -293,9 +307,10 @@ def _measure_from_pauli_string(
     *,
     pauli_chunk_size: int,
 ) -> torch.Tensor:
-    pauli = _canonicalize_pauli_string(observable)
-    if _pauli_spec_is_all_identity(pauli):
-        raise ValueError("Pauli-string observable cannot be all identity ('I').")
+    pauli = _normalize_pauli_observable_string(
+        observable,
+        _infer_n_qubits_from_state(state_2d),
+    )
 
     outputs = [
         _measure_single_pauli_word(

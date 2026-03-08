@@ -30,10 +30,6 @@ class CircuitConfig:
     data_reupload_every: int = 0
     angle_scaling_method: str = "none"
     angle_scaling: float | None = 1.0
-    # Backward-compatible aliases for angle_scaling_method.
-    angle_asin: bool = False
-    angle_acos: bool = False
-    scale_with_bias: bool = False
     reparametrize_sin_cos: bool = False
     init_identity: bool = False
     init_ones: bool = False
@@ -54,26 +50,6 @@ class CircuitConfig:
                 f"angle_scaling_method must be one of {sorted(methods)}. "
                 f"Got: {self.angle_scaling_method!r}"
             )
-
-        legacy_methods = []
-        if self.angle_asin:
-            legacy_methods.append("asin")
-        if self.angle_acos:
-            legacy_methods.append("acos")
-        if self.scale_with_bias:
-            legacy_methods.append("scale_with_bias")
-
-        if len(legacy_methods) > 1:
-            raise ValueError(
-                "Only one of angle_asin/angle_acos/scale_with_bias may be True."
-            )
-        if legacy_methods:
-            if self.angle_scaling_method != "none":
-                raise ValueError(
-                    "Use either angle_scaling_method or legacy flags "
-                    "(angle_asin/angle_acos/scale_with_bias), not both."
-                )
-            self.angle_scaling_method = legacy_methods[0]
 
         if self.observables is not None:
             if isinstance(self.observables, (list, tuple)) and len(self.observables) == 0:

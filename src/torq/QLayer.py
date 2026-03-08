@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import torq as tq
-import warnings
 from .Ansatz import make_ansatz
+from .Measure import _normalize_pauli_observable_string
 from ._pennylane_backend import maybe_create_pennylane_backend
 
 
@@ -38,9 +38,9 @@ class QLayer(nn.Module):
         self.param_init(weights, weights_last_layer_data_re, param_init_dict, q_layer_idx)
 
         # measurement setup
-        # self.observables = None
-        # self.set_observable_for_measurement()
         self.observables = getattr(self.config, "observables", None)
+        if isinstance(self.observables, str):  # this is an eager checker, the same checks are applied later as well
+            self.observables = _normalize_pauli_observable_string(self.observables, self.n_qubits)
         self._optional_backend = maybe_create_pennylane_backend(self)
 
     def forward(self, x):

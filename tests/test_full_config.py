@@ -17,26 +17,6 @@ def _full_pauli_matrix(word: str) -> torch.Tensor:
         out = torch.kron(out, mats[char].to(dtype=out.dtype))
     return out
 
-
-@pytest.mark.full
-def test_legacy_angle_aliases_map_to_scaling_method():
-    assert CircuitConfig(angle_asin=True).angle_scaling_method == "asin"
-    assert CircuitConfig(angle_acos=True).angle_scaling_method == "acos"
-    assert CircuitConfig(scale_with_bias=True).angle_scaling_method == "scale_with_bias"
-
-
-@pytest.mark.full
-def test_legacy_angle_aliases_are_mutually_exclusive():
-    with pytest.raises(ValueError, match="Only one of angle_asin/angle_acos/scale_with_bias"):
-        CircuitConfig(angle_asin=True, angle_acos=True)
-
-
-@pytest.mark.full
-def test_explicit_and_legacy_scaling_settings_cannot_be_mixed():
-    with pytest.raises(ValueError, match="Use either angle_scaling_method or legacy flags"):
-        CircuitConfig(angle_scaling_method="scale", angle_asin=True)
-
-
 @pytest.mark.full
 @pytest.mark.parametrize("angle_scaling_method", ["none", "scale", "scale_with_bias", "asin", "acos"])
 @pytest.mark.parametrize("basis", ["X", "Y", "Z"])
@@ -80,7 +60,7 @@ def test_init_flags(flag_name, expected_value):
 
 
 @pytest.mark.full
-def test_legacy_weight_shape_supported_without_data_reupload():
+def test_weight_shape_supported_without_data_reupload():
     weights = torch.rand(2, 3, 3)
     circuit = Circuit(
         n_qubits=3,
