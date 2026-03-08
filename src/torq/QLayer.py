@@ -81,7 +81,8 @@ class QLayer(nn.Module):
                 else:
                     w = self.params[layer, d_reup]
                 idx = d_reup if self.data_reupload_every else layer
-                state = self.ansatz.apply_layer(state, idx, w)
+                U = self.ansatz.layer_op(idx, w)
+                state = tq.apply_matrix(state, U)
 
             if self.data_reupload_every:
                 state = tq.data_reuploading(state, data_gates).squeeze(-1)  # [B,2**n]
@@ -98,7 +99,8 @@ class QLayer(nn.Module):
                     w = angles_reparametrize_last[d_reup]
                 else:
                     w = self.params_last_layer_reupload[d_reup]
-                state = self.ansatz.apply_layer(state, d_reup, w)
+                U = self.ansatz.layer_op(d_reup, w)
+                state = tq.apply_matrix(state, U)
 
         return tq.measure(
             state,

@@ -34,7 +34,6 @@ from .Ops import (
     multi_dim_tensor_product,
     multi_dim_matmul_reversed,
     kron_with_replace,
-    apply_cnot_ladder,
 )
 # Measure
 from .Measure import (
@@ -64,7 +63,7 @@ __all__ = [
     "__version__", "Ops", "SingleQubitGates", "Controls", "Templates", "Measure", "get_angle_embedding_sigmas",
     "angle_embedding", "cross_mesh_single_layer", "basic_or_strongly_single_layer",
     "global_entanglement_calc", "get_initial_state",
-    "apply_matrix", "multi_dim_tensor_product", "multi_dim_matmul_reversed", "kron_with_replace", "apply_cnot_ladder",
+    "apply_matrix", "multi_dim_tensor_product", "multi_dim_matmul_reversed", "kron_with_replace",
     "measure", "measure_local_observable", "measure_local_Z",
     "get_rx", "get_ry", "get_rz", "get_rot_gate",
     "ID1_like", "sigma_X_like", "sigma_Y_like", "sigma_Z_like", "local_obs_like",

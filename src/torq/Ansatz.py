@@ -1,7 +1,7 @@
 # torq/Ansatz.py
 import torch
 
-from . import Layout as layout, Ops as ops, Rotations as rotations, SingleQubitGates as single, Templates as templates
+from . import Layout as layout, Rotations as rotations, SingleQubitGates as single, Templates as templates
 
 class BaseAnsatz:
     """Uniform interface: per_layer_param_shape, layer_op(layer_idx, weights)->[2**n,2**n]."""
@@ -15,9 +15,6 @@ class BaseAnsatz:
 
     def layer_op(self, layer_idx: int, weights: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
-
-    def apply_layer(self, state: torch.Tensor, layer_idx: int, weights: torch.Tensor) -> torch.Tensor:
-        return ops.apply_matrix(state, self.layer_op(layer_idx, weights))
 
 
 class BasicEntangling(BaseAnsatz):
@@ -39,11 +36,6 @@ class BasicEntangling(BaseAnsatz):
         # weights: [n_qubits,3]
         return templates.basic_or_strongly_single_layer(self.n, weights, self._get_cnot(weights)).to(weights.device)
 
-    def apply_layer(self, state: torch.Tensor, layer_idx: int, weights: torch.Tensor) -> torch.Tensor:
-        gates = rotations.get_rot_gate(weights)
-        state = ops.apply_single_qubit_wall_batched(state, gates, self.n)
-        return ops.apply_cnot_ladder(state, n_qubits=self.n, r=0)
-
 
 class StronglyEntangling(BaseAnsatz):
     per_layer_param_shape = (None, 3)
@@ -62,11 +54,6 @@ class StronglyEntangling(BaseAnsatz):
 
     def layer_op(self, layer_idx, weights):
         return templates.basic_or_strongly_single_layer(self.n, weights, self._get_cnot(layer_idx, weights)).to(weights.device)
-
-    def apply_layer(self, state: torch.Tensor, layer_idx: int, weights: torch.Tensor) -> torch.Tensor:
-        gates = rotations.get_rot_gate(weights)
-        state = ops.apply_single_qubit_wall_batched(state, gates, self.n)
-        return ops.apply_cnot_ladder(state, n_qubits=self.n, r=layer_idx)
 
 
 class CrossMesh(BaseAnsatz):

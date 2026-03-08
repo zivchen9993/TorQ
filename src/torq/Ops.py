@@ -14,7 +14,6 @@ try:
 except ImportError:
     _USE_CUQUANTUM = False
 
-_CNOT_PERM_CACHE = {}
 _QUBIT_PAIR_INDEX_CACHE = {}
 _RUNTIME_CHECKS = os.getenv("TORQ_RUNTIME_CHECKS", "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -212,64 +211,3 @@ def apply_single_qubit_wall_batched(state, gates, n_qubits, qubit_order="msb"):
         output = output.unsqueeze(-1)
     _raise_if_nonfinite("apply_single_qubit_wall_batched(out)", output)
     return output
-
-
-def apply_cnot(state: torch.Tensor, n_qubits: int, control_qubit_id: int, target_qubit_id: int, qubit_order="msb") -> torch.Tensor:
-    squeeze_last = False
-    if state.dim() == 3 and state.shape[-1] == 1:
-        squeeze_last = True
-        state = state.squeeze(-1)
-    if state.dim() != 2 or state.shape[1] != (1 << n_qubits):
-        raise ValueError("apply_cnot: state must have shape [B, 2**n] or [B, 2**n, 1].")
-
-    perm = _get_cnot_perm(
-        n_qubits=n_qubits,
-        control_qubit_id=control_qubit_id,
-        target_qubit_id=target_qubit_id,
-        qubit_order=qubit_order,
-        device=state.device,
-    )
-    out = state[:, perm].contiguous()
-    if squeeze_last:
-        out = out.unsqueeze(-1)
-    return out
-
-
-def apply_cnot_ladder(state: torch.Tensor, n_qubits: int, r: int = 0, qubit_order="msb") -> torch.Tensor:
-    if (r + 1) == n_qubits:
-        return state
-    out = state
-    for control_qubit_id in range(n_qubits):
-        target_qubit_id = (control_qubit_id + r + 1) % n_qubits
-        out = apply_cnot(
-            out,
-            n_qubits=n_qubits,
-            control_qubit_id=control_qubit_id,
-            target_qubit_id=target_qubit_id,
-            qubit_order=qubit_order,
-        )
-    return out
-
-
-def _get_cnot_perm(n_qubits, control_qubit_id, target_qubit_id, qubit_order, device):
-    qubit_order = "msb" if qubit_order == "msb" else "lsb"
-    key = (n_qubits, control_qubit_id, target_qubit_id, qubit_order, device.type, device.index)
-    perm = _CNOT_PERM_CACHE.get(key)
-    if perm is not None:
-        return perm
-
-    idx = torch.arange(1 << n_qubits, dtype=torch.long)
-    if qubit_order == "msb":
-        ctrl_bit = 1 << (n_qubits - 1 - control_qubit_id)
-        tgt_bit = 1 << (n_qubits - 1 - target_qubit_id)
-    else:
-        ctrl_bit = 1 << control_qubit_id
-        tgt_bit = 1 << target_qubit_id
-
-    mask = (idx & ctrl_bit) != 0
-    perm = idx.clone()
-    perm[mask] ^= tgt_bit
-    perm = perm.to(device=device)
-
-    _CNOT_PERM_CACHE[key] = perm
-    return perm
