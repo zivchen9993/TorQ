@@ -60,7 +60,6 @@ def get_cnot_ladder(n_qubits, r=0, *, dtype, device):
 @likeable
 def get_cnot_brick_wall(n_qubits, n_sublayers=1, cyclic=False, *, dtype, device):
     sublayer_gates = []
-    full_layer = []
     if n_qubits < 2:
         return torch.eye(2 ** n_qubits, dtype=dtype, device=device).unsqueeze(0)
 
@@ -97,10 +96,10 @@ def get_cnot_brick_wall(n_qubits, n_sublayers=1, cyclic=False, *, dtype, device)
     if not sublayer_gates:
         return torch.eye(2 ** n_qubits, dtype=dtype, device=device).unsqueeze(0)
 
-
-    for _ in range(n_sublayers):
-        full_layer.append(sublayer_gates)
-    return ops.multi_dim_matmul_reversed(*full_layer)
+    sublayer = ops.multi_dim_matmul_reversed(*sublayer_gates)
+    if n_sublayers <= 1:
+        return sublayer
+    return ops.multi_dim_matmul_reversed(*([sublayer] * n_sublayers))
 
 
 def get_cross_mesh_control_gate_layer(n_qubits, sigma, device, weights=None):
@@ -124,4 +123,3 @@ def get_cross_mesh_control_gate_layer(n_qubits, sigma, device, weights=None):
         controlled_ops.append(op.unsqueeze(0))
     # Multiply all controlled operations together using the optimized reversed multiplication.
     return ops.multi_dim_matmul_reversed(*controlled_ops)
-
