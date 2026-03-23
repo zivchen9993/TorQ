@@ -32,9 +32,11 @@ Performance on other GPUs has not been tuned and may differ. Multi-GPU usage is 
 currently available.
 
 ## Current supported features
-- Quantum circuit construction with 6 common ansatzes:
+- Quantum circuit construction with 8 common ansatzes:
     - basic_entangling
+    - single_rot_basic_ent
     - strongly_entangling
+    - tile
     - cross_mesh
     - cross_mesh_2_rots
     - cross_mesh_cx_rot
@@ -88,6 +90,72 @@ cfg = CircuitConfig(data_reupload_every=0)
 circuit = Circuit(n_qubits=n_qubits, n_layers=n_layers, ansatz_name="basic_entangling", config=cfg)
 
 x = torch.rand(8, n_qubits)
+y = circuit(x)
+```
+
+## Ansatz-specific options
+
+The following ansatz names are supported:
+- `basic_entangling`
+- `single_rot_basic_ent`
+- `strongly_entangling`
+- `tile`
+- `cross_mesh`
+- `cross_mesh_2_rots`
+- `cross_mesh_cx_rot`
+- `no_entanglement_ansatz`
+
+`single_rot_basic_ent` is the same connectivity as `basic_entangling`, but uses one rotation parameter per qubit instead of three.
+
+`tile` uses a brick-wall CNOT pattern. In each Tile sublayer, the entanglers are applied as:
+- `(0,1), (2,3), (4,5), ...`
+- then `(1,2), (3,4), (5,6), ...`
+- if `tile_cyclic=True`, an additional wraparound `CX(n_qubits-1, 0)` is added per sublayer
+
+Relevant `CircuitConfig` fields:
+- `single_rotation_gate`: rotation axis used by `single_rot_basic_ent`, and by `tile` when `tile_rotation_params=1`. Supported values: `"x"`, `"rx"`, `"y"`, `"ry"`, `"z"`, `"rz"`. Default: `"rx"`.
+- `tile_rotation_params`: `1` or `3`. Default: `3`.
+- `tile_sublayers`: number of repeated Tile brick-wall sublayers per layer. Default: `1`.
+- `tile_cyclic`: whether each Tile sublayer includes the wraparound `CX(n_qubits-1, 0)`. Default: `False`.
+
+Example: `single_rot_basic_ent`
+
+```python
+import torch
+from torq.simple import Circuit, CircuitConfig
+
+cfg = CircuitConfig(single_rotation_gate="ry")
+circuit = Circuit(
+    n_qubits=4,
+    n_layers=2,
+    ansatz_name="single_rot_basic_ent",
+    config=cfg,
+)
+
+x = torch.rand(8, 4)
+y = circuit(x)
+```
+
+Example: `tile`
+
+```python
+import torch
+from torq.simple import Circuit, CircuitConfig
+
+cfg = CircuitConfig(
+    tile_rotation_params=1,
+    single_rotation_gate="rz",
+    tile_sublayers=2,
+    tile_cyclic=True,
+)
+circuit = Circuit(
+    n_qubits=6,
+    n_layers=2,
+    ansatz_name="tile",
+    config=cfg,
+)
+
+x = torch.rand(8, 6)
 y = circuit(x)
 ```
 
