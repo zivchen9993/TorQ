@@ -10,10 +10,12 @@ from torq.simple import Circuit, CircuitConfig
     "ansatz_name",
     [
         "basic_entangling",
+        "single_rot_basic_ent",
         "strongly_entangling",
         "cross_mesh",
         "cross_mesh_2_rots",
         "cross_mesh_cx_rot",
+        "tile",
         "no_entanglement_ansatz",
     ],
 )

@@ -166,15 +166,24 @@ def cross_mesh_single_layer(n_qubits, weights,
     return ops.multi_dim_matmul_reversed(rot_wall, cross_mesh_layer)
 
 
-def basic_or_strongly_single_layer(n_qubits, weights, cnot_layer=None):
+def basic_or_strongly_single_layer(
+    n_qubits,
+    weights,
+    cnot_layer=None,
+    sigma_single_rot=rotations.get_rot_gate,
+):
     """
         Creates a single basic or strongly entangling layer, depends on the cnot_layer.
-        weights: tensor of shape [n_qubits, 3] (shared for all batch elements)
+        weights: tensor of shape [n_qubits] or [n_qubits, 3] (shared for all batch elements)
         Returns: operator of shape [2**n_qubits, 2**n_qubits]
         """
     layer_ops = []
     # Build the rotation wall using the weight parameters.
-    rot_wall = layout.get_single_qubit_pauli_rot_ops(n_qubits, weights, sigma_func=rotations.get_rot_gate)
+    rot_wall = layout.get_single_qubit_pauli_rot_ops(
+        n_qubits,
+        weights,
+        sigma_func=sigma_single_rot,
+    )
     layer_ops.append(rot_wall)
     layer_ops.append(cnot_layer)
     return ops.multi_dim_matmul_reversed(*layer_ops)

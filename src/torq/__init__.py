@@ -53,6 +53,7 @@ from .Rotations import (
 # Controls & Layout
 from .Controls import (get_cnot_ops, get_single_two_qubit_gate)
 from .Layout import (
+    get_cnot_brick_wall,
     get_cnot_ladder,
     get_cross_mesh_control_gate_layer,
     get_single_qubit_pauli_rot_ops,
@@ -69,6 +70,6 @@ __all__ = [
     "ID1_like", "sigma_X_like", "sigma_Y_like", "sigma_Z_like", "local_obs_like",
     "ketbra00_like", "ketbra01_like", "ketbra10_like", "ketbra11_like",
     "get_cnot_ops", "get_single_two_qubit_gate",
-    "get_cnot_ladder", "get_cross_mesh_control_gate_layer", "get_single_qubit_pauli_rot_ops", "data_reuploading",
+    "get_cnot_brick_wall", "get_cnot_ladder", "get_cross_mesh_control_gate_layer", "get_single_qubit_pauli_rot_ops", "data_reuploading",
     "data_reuploading_gates", "Circuit", "CircuitConfig"
 ]

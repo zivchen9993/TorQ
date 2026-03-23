@@ -35,7 +35,7 @@ class QLayer(nn.Module):
         # === ansatz selection + parameter tensor shape ===
         # build ansatz object (holds any precomputes)
         # NOTE: device of params is not known yet; we’ll move precomputes lazily on first forward if needed
-        self.ansatz = make_ansatz(ansatz_name, n_qubits, n_layers, device=None)
+        self.ansatz = make_ansatz(ansatz_name, n_qubits, n_layers, device=None, config=self.config)
         self.param_init(weights, weights_last_layer_data_re, param_init_dict, q_layer_idx)
 
         # measurement setup

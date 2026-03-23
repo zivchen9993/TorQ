@@ -31,6 +31,10 @@ class CircuitConfig:
     angle_scaling_method: str = "none"
     angle_scaling: float | None = 1.0
     reparametrize_sin_cos: bool = False
+    single_rotation_gate: str = "rx"
+    tile_rotation_params: int = 3
+    tile_sublayers: int = 1
+    tile_cyclic: bool = False
     init_identity: bool = False
     init_ones: bool = False
     init_pi_half: bool = False
@@ -50,6 +54,23 @@ class CircuitConfig:
                 f"angle_scaling_method must be one of {sorted(methods)}. "
                 f"Got: {self.angle_scaling_method!r}"
             )
+
+        rotation_gates = {"x", "y", "z", "rx", "ry", "rz"}
+        if (
+            not isinstance(self.single_rotation_gate, str)
+            or self.single_rotation_gate.lower() not in rotation_gates
+        ):
+            raise ValueError(
+                "single_rotation_gate must be one of "
+                f"{sorted(rotation_gates)}. Got: {self.single_rotation_gate!r}"
+            )
+        if self.tile_rotation_params not in (1, 3):
+            raise ValueError(
+                "tile_rotation_params must be one of (1, 3). "
+                f"Got: {self.tile_rotation_params!r}"
+            )
+        if self.tile_sublayers < 1:
+            raise ValueError("tile_sublayers must be >= 1.")
 
         if self.observables is not None:
             if isinstance(self.observables, (list, tuple)) and len(self.observables) == 0:

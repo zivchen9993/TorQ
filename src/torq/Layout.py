@@ -45,10 +45,62 @@ def get_cnot_ladder(n_qubits, r=0, *, dtype, device):
         return torch.eye(2 ** n_qubits, dtype=dtype, device=device).unsqueeze(0)
     for control_qubit_id in range(n_qubits):
         target_qubit_id = (control_qubit_id + r + 1) % n_qubits
-        current_CNOT = controls.get_cnot_ops(n_qubits, control_qubit_id, target_qubit_id, device=device)  # in the loop, r starts with 0
+        current_CNOT = controls.get_cnot_ops(
+            n_qubits,
+            control_qubit_id,
+            target_qubit_id,
+            dtype=dtype,
+            device=device,
+        )  # in the loop, r starts with 0
         current_CNOT = current_CNOT.unsqueeze(0)  # add batch dimension
         gate_items_list.append(current_CNOT)
     return ops.multi_dim_matmul_reversed(*gate_items_list)
+
+
+@likeable
+def get_cnot_brick_wall(n_qubits, n_sublayers=1, cyclic=False, *, dtype, device):
+    sublayer_gates = []
+    full_layer = []
+    if n_qubits < 2:
+        return torch.eye(2 ** n_qubits, dtype=dtype, device=device).unsqueeze(0)
+
+    for control_qubit_id in range(0, n_qubits - 1, 2):
+        current_cnot = controls.get_cnot_ops(
+            n_qubits,
+            control_qubit_id,
+            control_qubit_id + 1,
+            dtype=dtype,
+            device=device,
+        ).unsqueeze(0)
+        sublayer_gates.append(current_cnot)
+
+    for control_qubit_id in range(1, n_qubits - 1, 2):
+        current_cnot = controls.get_cnot_ops(
+            n_qubits,
+            control_qubit_id,
+            control_qubit_id + 1,
+            dtype=dtype,
+            device=device,
+        ).unsqueeze(0)
+        sublayer_gates.append(current_cnot)
+
+    if cyclic and n_qubits > 2:
+        current_cnot = controls.get_cnot_ops(
+            n_qubits,
+            n_qubits - 1,
+            0,
+            dtype=dtype,
+            device=device,
+        ).unsqueeze(0)
+        sublayer_gates.append(current_cnot)
+
+    if not sublayer_gates:
+        return torch.eye(2 ** n_qubits, dtype=dtype, device=device).unsqueeze(0)
+
+
+    for _ in range(n_sublayers):
+        full_layer.append(sublayer_gates)
+    return ops.multi_dim_matmul_reversed(*full_layer)
 
 
 def get_cross_mesh_control_gate_layer(n_qubits, sigma, device, weights=None):
