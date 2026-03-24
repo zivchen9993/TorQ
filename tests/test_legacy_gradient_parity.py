@@ -220,9 +220,12 @@ def test_basic_entangling_circuit_gradients_match_legacy_manual_forward(legacy_q
         n_qubits=3,
         n_layers=2,
         ansatz_name="basic_entangling",
-        config=CircuitConfig(angle_scaling_method="scale", angle_scaling=torch.pi),
+        config=CircuitConfig(
+            angle_scaling_method="scale",
+            angle_scaling=torch.pi,
+            basis_angle_embedding="X",
+        ),
         weights=torq_weights,
-        basis_angle_embedding="X",
     )
     torq_out = circuit(x_torq)
 
@@ -258,9 +261,12 @@ def test_strongly_entangling_circuit_gradients_match_legacy_all_to_all_manual_fo
         n_qubits=3,
         n_layers=2,
         ansatz_name="strongly_entangling",
-        config=CircuitConfig(angle_scaling_method="scale", angle_scaling=torch.pi),
+        config=CircuitConfig(
+            angle_scaling_method="scale",
+            angle_scaling=torch.pi,
+            basis_angle_embedding="Z",
+        ),
         weights=torq_weights,
-        basis_angle_embedding="Z",
     )
     torq_out = circuit(x_torq)
 
@@ -305,10 +311,10 @@ def test_basic_entangling_data_reupload_circuit_gradients_match_legacy_manual_fo
             data_reupload_every=data_reupload_every,
             angle_scaling_method="scale_with_bias",
             angle_scaling=torch.pi,
+            basis_angle_embedding="Y",
         ),
         weights=torq_weights,
         weights_last_layer_data_re=torq_last,
-        basis_angle_embedding="Y",
     )
     torq_out = circuit(x_torq)
 

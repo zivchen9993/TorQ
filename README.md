@@ -113,6 +113,7 @@ The following ansatz names are supported:
 - if `tile_cyclic=True`, an additional wraparound `CX(n_qubits-1, 0)` is added per sublayer
 
 Relevant `CircuitConfig` fields:
+- `basis_angle_embedding`: angle-embedding rotation basis. Supported values: `"x"`, `"rx"`, `"y"`, `"ry"`, `"z"`, `"rz"`. Default: `"X"`.
 - `single_rotation_gate`: rotation axis used by `single_rot_basic_ent`, and by `tile` when `tile_rotation_params=1`. Supported values: `"x"`, `"rx"`, `"y"`, `"ry"`, `"z"`, `"rz"`. Default: `"rx"`.
 - `tile_rotation_params`: `1` or `3`. Default: `3`.
 - `tile_sublayers`: number of repeated Tile brick-wall sublayers per layer. Default: `1`.
@@ -165,7 +166,11 @@ y = circuit(x)
 import torch
 from torq.simple import Circuit, CircuitConfig
 
-cfg = CircuitConfig(angle_scaling_method="scale", angle_scaling=torch.pi)
+cfg = CircuitConfig(
+    angle_scaling_method="scale",
+    angle_scaling=torch.pi,
+    basis_angle_embedding="Y",
+)
 circuit = Circuit(n_qubits=4, n_layers=2, ansatz_name="basic_entangling", config=cfg)
 
 x = torch.rand(8, 4)

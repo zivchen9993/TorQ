@@ -9,13 +9,13 @@ from ._pennylane_backend import maybe_create_pennylane_backend
 
 class QLayer(nn.Module):
     def __init__(self, n_qubits=3, n_layers=1, ansatz_name="basic_entangling", config=None, weights=None,
-                 weights_last_layer_data_re=None, q_layer_idx=0, param_init_dict=None, basis_angle_embedding='X'):
+                 weights_last_layer_data_re=None, q_layer_idx=0, param_init_dict=None):
         super().__init__()
         self.n_qubits = n_qubits
         self.n_layers = n_layers
         self.config = config
         self.ansatz_name = ansatz_name
-        self.basis_angle_embedding = basis_angle_embedding
+        self.basis_angle_embedding = getattr(config, "basis_angle_embedding", "X")
 
         # === data re-upload config ===
         self.data_reupload_every = getattr(self.config, "data_reupload_every", 0)  # 0 → off

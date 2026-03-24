@@ -24,13 +24,13 @@ def test_angle_scaling_methods_and_bases(angle_scaling_method, basis):
     cfg = CircuitConfig(
         angle_scaling_method=angle_scaling_method,
         angle_scaling=torch.pi,
+        basis_angle_embedding=basis,
     )
     circuit = Circuit(
         n_qubits=2,
         n_layers=1,
         ansatz_name="basic_entangling",
         config=cfg,
-        basis_angle_embedding=basis,
     )
     x = torch.rand(3, 2) * 2 - 1
     y = circuit(x)
@@ -57,6 +57,12 @@ def test_init_flags(flag_name, expected_value):
     )
     expected = torch.full_like(circuit.params, expected_value)
     assert torch.allclose(circuit.params.detach(), expected)
+
+
+@pytest.mark.full
+def test_basis_angle_embedding_validation():
+    with pytest.raises(ValueError, match="basis_angle_embedding"):
+        CircuitConfig(basis_angle_embedding="sx")
 
 
 @pytest.mark.full

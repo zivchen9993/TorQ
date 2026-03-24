@@ -30,6 +30,7 @@ class CircuitConfig:
     data_reupload_every: int = 0
     angle_scaling_method: str = "none"
     angle_scaling: float | None = 1.0
+    basis_angle_embedding: str = "X"
     reparametrize_sin_cos: bool = False
     single_rotation_gate: str = "rx"
     tile_rotation_params: int = 3
@@ -53,6 +54,16 @@ class CircuitConfig:
             raise ValueError(
                 f"angle_scaling_method must be one of {sorted(methods)}. "
                 f"Got: {self.angle_scaling_method!r}"
+            )
+
+        embedding_bases = {"x", "y", "z", "rx", "ry", "rz"}
+        if (
+            not isinstance(self.basis_angle_embedding, str)
+            or self.basis_angle_embedding.lower() not in embedding_bases
+        ):
+            raise ValueError(
+                "basis_angle_embedding must be one of "
+                f"{sorted(embedding_bases)}. Got: {self.basis_angle_embedding!r}"
             )
 
         rotation_gates = {"x", "y", "z", "rx", "ry", "rz"}
@@ -90,7 +101,6 @@ class Circuit(nn.Module):
         config: CircuitConfig | None = None,
         weights: torch.Tensor | None = None,
         weights_last_layer_data_re: torch.Tensor | None = None,
-        basis_angle_embedding: str = "X",
     ) -> None:
         super().__init__()
         self.config = config if config is not None else CircuitConfig()
@@ -101,7 +111,6 @@ class Circuit(nn.Module):
             config=self.config,
             weights=weights,
             weights_last_layer_data_re=weights_last_layer_data_re,
-            basis_angle_embedding=basis_angle_embedding,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

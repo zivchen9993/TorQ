@@ -164,6 +164,7 @@ def test_basic_entangling_circuit_matches_legacy_manual_forward(legacy_qg, legac
     config = CircuitConfig(
         angle_scaling_method="scale",
         angle_scaling=torch.pi,
+        basis_angle_embedding="X",
     )
     circuit = Circuit(
         n_qubits=3,
@@ -171,7 +172,6 @@ def test_basic_entangling_circuit_matches_legacy_manual_forward(legacy_qg, legac
         ansatz_name="basic_entangling",
         config=config,
         weights=weights,
-        basis_angle_embedding="X",
     )
 
     torq_out = circuit(x)
@@ -200,6 +200,7 @@ def test_basic_entangling_data_reupload_circuit_matches_legacy_manual_forward(le
         data_reupload_every=data_reupload_every,
         angle_scaling_method="scale_with_bias",
         angle_scaling=torch.pi,
+        basis_angle_embedding="Y",
     )
     circuit = Circuit(
         n_qubits=3,
@@ -208,7 +209,6 @@ def test_basic_entangling_data_reupload_circuit_matches_legacy_manual_forward(le
         config=config,
         weights=weights,
         weights_last_layer_data_re=weights_last_layer_data_re,
-        basis_angle_embedding="Y",
     )
 
     torq_out = circuit(x)
