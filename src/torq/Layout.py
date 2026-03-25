@@ -83,7 +83,7 @@ def get_cnot_brick_wall(n_qubits, n_sublayers=1, cyclic=False, *, dtype, device)
         ).unsqueeze(0)
         sublayer_gates.append(current_cnot)
 
-    if cyclic and n_qubits > 2:
+    if cyclic and n_qubits > 2 and (n_qubits % 2 == 0):
         current_cnot = controls.get_cnot_ops(
             n_qubits,
             n_qubits - 1,

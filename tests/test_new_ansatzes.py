@@ -89,7 +89,29 @@ def test_tile_noncyclic_layer_matches_manual_construction():
 
 
 @pytest.mark.full
-def test_tile_cyclic_layer_matches_manual_construction():
+def test_tile_cyclic_layer_matches_manual_construction_for_even_qubit_count():
+    weights = torch.tensor([0.1, -0.2, 0.3, -0.4], dtype=torch.float64)
+    config = CircuitConfig(
+        single_rotation_gate="rz",
+        tile_rotation_params=1,
+        tile_sublayers=1,
+        tile_cyclic=True,
+    )
+
+    ansatz = make_ansatz("tile", 4, 1, config=config)
+    actual = ansatz.layer_op(0, weights)
+    expected = tq.basic_or_strongly_single_layer(
+        4,
+        weights,
+        _manual_cnot_layer(4, [(0, 1), (2, 3), (1, 2), (3, 0)], weights),
+        sigma_single_rot=tq.get_rz,
+    )
+
+    assert torch.allclose(actual, expected, atol=1e-7, rtol=1e-7)
+
+
+@pytest.mark.full
+def test_tile_cyclic_layer_skips_wraparound_for_odd_qubit_count():
     weights = torch.tensor([0.1, -0.2, 0.3, -0.4, 0.5], dtype=torch.float64)
     config = CircuitConfig(
         single_rotation_gate="rz",
@@ -103,7 +125,7 @@ def test_tile_cyclic_layer_matches_manual_construction():
     expected = tq.basic_or_strongly_single_layer(
         5,
         weights,
-        _manual_cnot_layer(5, [(0, 1), (2, 3), (1, 2), (3, 4), (4, 0)], weights),
+        _manual_cnot_layer(5, [(0, 1), (2, 3), (1, 2), (3, 4)], weights),
         sigma_single_rot=tq.get_rz,
     )
 
