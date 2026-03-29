@@ -41,6 +41,7 @@ gpu_check.sh
 AnsatzDrawer.py
 AnsatzesQiskit.py
 for_paper/
+.codex
 
 qpinn_oop_tests/
 trend comparisson.xlsx
