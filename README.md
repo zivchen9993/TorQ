@@ -35,7 +35,7 @@ This library was benchmarked primarily on NVIDIA L40s and A100 GPUs. Performance
 TorQ requires Python 3.10+ and PyTorch 1.13+.
 
 ```bash
-# install from PyPI
+# install from PyPI - not fully updated yet
 python -m pip install torq-quantum
 
 # optional: editable install for local development
