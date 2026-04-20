@@ -9,6 +9,16 @@ by Ziv Chen, Gal G. Shaviner, Hemanth Chandravamsi, Shimon Pisnoy, Steven H. Fra
 
 https://arxiv.org/abs/2506.23246
 
+For the simpler version associated with the following paper, please use the simple_for_PINNACLE branch:
+PINNACLE: An Open-Source Computational Framework for Classical and Quantum PINNs
+
+by Shimon Pisnoy, Hemanth Chandravamsi, Ziv Chen, Aaron Goldgewert, Gal Shaviner, Boris Shragner, Steven H. Frankel
+
+https://arxiv.org/abs/2604.15645
+
+It will be compatible with TorQ-bench and QPINNACLE repos with the same branch name.
+
+
 ## When to use
 
 - You want a fast, differentiable quantum layer inside a PyTorch model (`QLayer`/`Circuit`).
