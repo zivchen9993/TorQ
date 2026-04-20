@@ -16,7 +16,7 @@ by Shimon Pisnoy, Hemanth Chandravamsi, Ziv Chen, Aaron Goldgewert, Gal Shaviner
 
 https://arxiv.org/abs/2604.15645
 
-It is compatible with TorQ-bench simple_for_PINNACLE branch and PINNACLE repos. Also, the simple_for_PINNACLE branch is the same as torq-quantum v0.1.2 on PyPI.
+It is compatible with the TorQ-bench `simple_for_PINNACLE` branch and the PINNACLE repos. Also, the simple_for_PINNACLE branch is the same as torq-quantum v0.1.2 on PyPI.
 
 ## When to use
 
@@ -44,7 +44,7 @@ This library was benchmarked primarily on NVIDIA L40s and A100 GPUs. Performance
 TorQ requires Python 3.10+ and PyTorch 1.13+.
 
 ```bash
-# install from PyPI - not fully updated yet
+# install from PyPI
 python -m pip install torq-quantum
 
 # optional: editable install for local development
