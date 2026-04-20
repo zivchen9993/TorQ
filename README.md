@@ -16,7 +16,7 @@ by Shimon Pisnoy, Hemanth Chandravamsi, Ziv Chen, Aaron Goldgewert, Gal Shaviner
 
 https://arxiv.org/abs/2604.15645
 
-It is compatible with the TorQ-bench `simple_for_PINNACLE` branch and the PINNACLE repos. Also, the simple_for_PINNACLE branch is the same as torq-quantum v0.1.2 on PyPI.
+It is compatible with the TorQ-bench `simple_for_PINNACLE` branch and the PINNACLE repos.
 
 ## When to use
 
