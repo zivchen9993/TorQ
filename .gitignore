@@ -15,6 +15,7 @@ classical_comparisson/
 
 # Ignore python project files
 .venv/
+.venv-*/
 .idea/
 .git/
 
