@@ -55,6 +55,8 @@ The PyPI package name is `torq-quantum`, while the Python import path is `torq`.
 
 If you want to use the optional PennyLane comparison backend, you also need importable `pennylane` and `torq_bench` packages in the same environment.
 
+(https://github.com/zivchen9993/TorQ-bench)
+
 ## Quickstart
 
 `torq.simple.Circuit` is the recommended student-facing API.
