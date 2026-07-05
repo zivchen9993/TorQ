@@ -7,7 +7,7 @@ Quantum Physics-Informed Neural Networks for Maxwell's Equations: Circuit Design
 
 by Ziv Chen, Gal G. Shaviner, Hemanth Chandravamsi, Shimon Pisnoy, Steven H. Frankel, Uzi Pereg
 
-https://arxiv.org/abs/2506.23246
+https://link.springer.com/article/10.1007/s42484-026-00365-w
 
 For the simpler version associated with the following paper, please use the simple_for_PINNACLE branch:
 PINNACLE: An Open-Source Computational Framework for Classical and Quantum PINNs
